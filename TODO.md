@@ -1,5 +1,39 @@
 # HitLaunchDmx — TODO
 
+## Requested next (user-prioritised, 2026-06-05)
+
+1. **Master parameters as Launchpad controls.** Map the four pots (DIM, TAIL,
+   SPEED, XFADE) to physical Launchpad controls so they can be ridden without
+   the mouse. Options: use the top round-button row (notes 91–98) as
+   increment/decrement pairs per parameter, or — cleaner — put the unit's
+   faders... (Mini MK3 has no faders, so use button pairs or a dedicated
+   "control row" on the grid). Reflect the value back via LED brightness.
+   Keep the mapping in the same editable layer as the pad→scene table.
+   Touch points: `SceneEngine::handleIncomingMidiMessage` (decode control
+   notes), new setters already exist (`setGlobalDim/SpeedScale/TailScale/
+   CrossfadeSec`), and `MainComponent` pots should reflect hardware changes
+   (add atomics getters + sync in the 15 Hz timer).
+
+2. **Master-parameter reset.**
+   - Per-pot reset: cmd-click and double-click on a pot resets it to its
+     neutral default (DIM 100%, TAIL 100%, SPEED 100%, XFADE 2 s). In JUCE,
+     `Slider::setDoubleClickReturnValue(true, defaultVal)` handles
+     double-click; for cmd-click, handle in a `mouseDown` with
+     `mods.isCommandDown()` and call `setValue(default)`.
+   - "Reset all" on the Launchpad: pick a spare button (e.g. a top round
+     button) that resets all four masters to neutral; add a matching UI
+     button too.
+
+3. **Better master-parameter ranges + window width.**
+   - Some scenes are over-sensitive to SPEED/TAIL. Revisit ranges/curves:
+     consider a skewed (logarithmic) SPEED slider so the useful range is
+     spread out, and clamp/curve TAIL so extreme values don't wash a scene
+     out. DIM may want a gentle gamma so low end is finer.
+   - Make the window a tad wider so the virtual launchpad square spans the
+     FULL window height (currently the square is limited by the right
+     panel's available height; widen the window and/or right panel so
+     `side = availH` and the grid fills top-to-bottom).
+
 ## Immediate / first use
 - [ ] Smoke-test on Monterey/Intel target machine
 - [ ] Confirm Launchpad note numbers via MIDI log (should be 11–88)
