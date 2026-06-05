@@ -7,6 +7,62 @@ namespace hitlaunchdmx
 {
 
 // ============================================================================
+// DimKnobLookAndFeel  (adapted from hitnotedmx)
+// ============================================================================
+void DimKnobLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width,
+                                          int height, float sliderPos,
+                                          float rotaryStartAngle, float rotaryEndAngle,
+                                          juce::Slider& s)
+{
+    auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
+                                         static_cast<float>(width), static_cast<float>(height))
+                      .reduced(4.0f);
+    const auto  centre = bounds.getCentre();
+    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
+    const float lineW  = juce::jmax(3.0f, radius * 0.18f);
+    const float arcR   = radius - lineW * 0.5f;
+    const float angle  = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+    const auto  accent = s.findColour(juce::Slider::rotarySliderFillColourId);
+
+    // Background track.
+    juce::Path track;
+    track.addCentredArc(centre.x, centre.y, arcR, arcR, 0.0f,
+                        rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour(juce::Colour(0xff3a3a3a));
+    g.strokePath(track, juce::PathStrokeType(lineW, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
+
+    // Filled value arc.
+    if (sliderPos > 0.0f)
+    {
+        juce::Path value;
+        value.addCentredArc(centre.x, centre.y, arcR, arcR, 0.0f,
+                            rotaryStartAngle, angle, true);
+        g.setColour(accent);
+        g.strokePath(value, juce::PathStrokeType(lineW, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+    }
+
+    // Knob body with a subtle radial shade.
+    const float bodyR = radius - lineW - 2.0f;
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff343434), centre.x, centre.y - bodyR,
+                                           juce::Colour(0xff202020), centre.x, centre.y + bodyR,
+                                           false));
+    g.fillEllipse(centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+    g.setColour(accent.withAlpha(0.5f));
+    g.drawEllipse(centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+
+    // Pointer.
+    juce::Path pointer;
+    const float thick = juce::jmax(2.0f, bodyR * 0.14f);
+    const float len   = bodyR * 0.82f;
+    pointer.addRoundedRectangle(-thick * 0.5f, -len, thick, len * 0.62f, thick * 0.5f);
+    pointer.applyTransform(juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
+    g.setColour(juce::Colours::white);
+    g.fillPath(pointer);
+}
+
+// ============================================================================
 // VirtualLaunchpad
 // ============================================================================
 
@@ -173,14 +229,55 @@ MainComponent::MainComponent()
     // ── centre visualiser ─────────────────────────────────────────────────
     addAndMakeVisible(visualizer);
 
-    // ── right: virtual launchpad + crossfade ─────────────────────────────
+    // ── right: virtual launchpad ──────────────────────────────────────────
     addAndMakeVisible(virtualLaunchpad);
 
-    addAndMakeVisible(xfadeLabel);
-    addAndMakeVisible(xfadeSlider);
+    // ── four performance pots (left panel bottom) ─────────────────────────
+    auto setUpKnob = [this](juce::Slider& s, juce::Label& lab,
+                            const juce::String& text, juce::Colour accent)
+    {
+        s.setLookAndFeel(&knobLnf);
+        s.setColour(juce::Slider::rotarySliderFillColourId, accent);
+        s.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
+        s.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 56, 16);
+        addAndMakeVisible(s);
+
+        lab.setText(text, juce::dontSendNotification);
+        lab.setJustificationType(juce::Justification::centred);
+        lab.setFont(juce::FontOptions(9.0f));
+        lab.setColour(juce::Label::textColourId, juce::Colour(0xffbbbbbb));
+        addAndMakeVisible(lab);
+    };
+
+    setUpKnob(dimSlider,   dimLabel,   "DIM",   juce::Colour(0xfff2a93b));
+    dimSlider.setRange(0.0, 100.0, 1.0);
+    dimSlider.setValue(100.0);
+    dimSlider.setTextValueSuffix("%");
+    dimSlider.onValueChange = [this] {
+        engine.setGlobalDim(static_cast<float>(dimSlider.getValue()) / 100.0f);
+    };
+
+    setUpKnob(tailSlider,  tailLabel,  "TAIL",  juce::Colour(0xff39c6c0));
+    tailSlider.setRange(0.0, 200.0, 1.0);
+    tailSlider.setValue(100.0);
+    tailSlider.setTextValueSuffix("%");
+    tailSlider.onValueChange = [this] {
+        engine.setTailScale(static_cast<float>(tailSlider.getValue()) / 100.0f);
+    };
+
+    setUpKnob(speedSlider, speedLabel, "SPEED", juce::Colour(0xff8ad13b));
+    speedSlider.setRange(10.0, 300.0, 1.0);
+    speedSlider.setValue(100.0);
+    speedSlider.setTextValueSuffix("%");
+    speedSlider.onValueChange = [this] {
+        engine.setSpeedScale(static_cast<float>(speedSlider.getValue()) / 100.0f);
+    };
+
+    setUpKnob(xfadeSlider, xfadeLabel, "XFADE", juce::Colour(0xffc06bd1));
     xfadeSlider.setRange(0.0, 5.0, 0.1);
     xfadeSlider.setValue(2.0);
-    xfadeSlider.setTextValueSuffix(" s");
+    xfadeSlider.setTextValueSuffix("s");
     xfadeSlider.onValueChange = [this] {
         engine.setCrossfadeSec(static_cast<float>(xfadeSlider.getValue()));
     };
@@ -195,6 +292,12 @@ MainComponent::~MainComponent()
     stopTimer();
     engine.stop();
     dmx.disconnect();
+
+    // Detach custom LnF before the sliders are destroyed.
+    dimSlider.setLookAndFeel(nullptr);
+    tailSlider.setLookAndFeel(nullptr);
+    speedSlider.setLookAndFeel(nullptr);
+    xfadeSlider.setLookAndFeel(nullptr);
 }
 
 void MainComponent::buildMidiDeviceMenus()
@@ -298,6 +401,9 @@ void MainComponent::resized()
     auto centrePanel = area;
 
     // ── left ──────────────────────────────────────────────────────────────
+    // Reserve the bottom for a 2×2 grid of pots.
+    auto potArea = leftPanel.removeFromBottom(200);
+
     midiInLabel  .setBounds(leftPanel.removeFromTop(16));
     midiInCombo  .setBounds(leftPanel.removeFromTop(24));
     leftPanel.removeFromTop(4);
@@ -311,22 +417,37 @@ void MainComponent::resized()
     blackoutBtn  .setBounds(leftPanel.removeFromTop(26));
     leftPanel.removeFromTop(4);
     lpModeBtn    .setBounds(leftPanel.removeFromTop(26));
-    leftPanel.removeFromTop(8);
-    dmxStatusLabel.setBounds(leftPanel.removeFromTop(50));
+    leftPanel.removeFromTop(6);
+    dmxStatusLabel.setBounds(leftPanel.removeFromTop(46));
     leftPanel.removeFromTop(4);
-    midiLogEditor.setBounds(leftPanel);
+    // Remaining (reduced) space → MIDI log
+    midiLogEditor.setBounds(leftPanel.removeFromTop(juce::jmax(40, leftPanel.getHeight())));
+
+    // 2×2 pot grid at the bottom of the left panel.
+    {
+        const int labelH = 14;
+        const int rowH   = potArea.getHeight() / 2;
+        const int colW   = potArea.getWidth()  / 2;
+
+        auto place = [labelH](juce::Rectangle<int> cell, juce::Label& lab, juce::Slider& s)
+        {
+            lab.setBounds(cell.removeFromTop(labelH));
+            s.setBounds(cell);
+        };
+
+        auto topRow = potArea.removeFromTop(rowH);
+        place(topRow.removeFromLeft(colW), dimLabel,   dimSlider);
+        place(topRow,                      tailLabel,  tailSlider);
+
+        auto botRow = potArea;
+        place(botRow.removeFromLeft(colW), speedLabel, speedSlider);
+        place(botRow,                      xfadeLabel, xfadeSlider);
+    }
 
     // ── centre ────────────────────────────────────────────────────────────
     visualizer.setBounds(centrePanel.reduced(4));
 
-    // ── right: launchpad grid + crossfade ─────────────────────────────────
-    // Crossfade at the bottom
-    rightPanel.removeFromBottom(4);
-    xfadeSlider.setBounds(rightPanel.removeFromBottom(36));
-    xfadeLabel .setBounds(rightPanel.removeFromBottom(18));
-    rightPanel.removeFromBottom(8);
-
-    // Virtual launchpad fills the rest
+    // ── right: launchpad grid ─────────────────────────────────────────────
     virtualLaunchpad.setBounds(rightPanel);
 }
 

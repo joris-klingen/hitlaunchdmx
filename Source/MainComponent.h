@@ -12,6 +12,17 @@
 namespace hitlaunchdmx
 {
 
+// ── DimKnobLookAndFeel ───────────────────────────────────────────────────────
+// Custom rotary look (adapted from hitnotedmx): dark body, coloured value arc
+// from rotarySliderFillColourId, white pointer. Each knob can be tinted.
+class DimKnobLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height,
+                          float sliderPos, float rotaryStartAngle,
+                          float rotaryEndAngle, juce::Slider&) override;
+};
+
 // ── VirtualLaunchpad ─────────────────────────────────────────────────────────
 // Clickable 8×8 grid mirroring the Launchpad Mini MK3 pad layout.
 // Visual row 0 (top)    = LP row 8 (notes 81–88) = wild chases 9–16
@@ -77,8 +88,6 @@ private:
 
     // --- right ---
     VirtualLaunchpad virtualLaunchpad;
-    juce::Label      xfadeLabel      { {}, "Crossfade (s):" };
-    juce::Slider     xfadeSlider;
 
     // --- left panel ---
     juce::Label      midiInLabel     { {}, "MIDI In:" };
@@ -91,6 +100,17 @@ private:
     juce::TextButton lpModeBtn       { "LP Prog Mode" };
     juce::Label      dmxStatusLabel  { {}, "" };
     juce::TextEditor midiLogEditor;
+
+    // --- four performance pots (left panel bottom) ---
+    DimKnobLookAndFeel knobLnf;
+    juce::Slider dimSlider   { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+    juce::Slider tailSlider  { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+    juce::Slider speedSlider { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+    juce::Slider xfadeSlider { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+    juce::Label  dimLabel    { {}, "DIM" };
+    juce::Label  tailLabel   { {}, "TAIL" };
+    juce::Label  speedLabel  { {}, "SPEED" };
+    juce::Label  xfadeLabel  { {}, "XFADE" };
 
     bool blackoutActive { false };
 

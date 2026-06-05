@@ -69,26 +69,22 @@ void DmxVisualizer::rebuildCache()
     juce::Graphics g(cachedImage);
     g.fillAll(juce::Colour(0xff141414));
 
-    // The 4 bars sit on a C-arc (0°→60°→120°→180°, open end left).
-    // Centre the arc horizontally by shifting the pivot leftward.
-    // Average bar x-offset = R * (sin0 + sin60 + sin120 + sin180) / 4 = R*0.433
-    // so we shift the draw-centre left by that amount.
-    const float cx     = static_cast<float>(w) * 0.5f;
-    const float cy     = static_cast<float>(h) * 0.5f;
-    const float radius = std::min(cx, cy) * 0.62f;
-    const float dcx    = cx - radius * 0.43f;   // compensate for C being right-heavy
+    // 4 vertical bars side by side, evenly spaced, centred in the component.
+    const int labelH  = 14;
+    const int marginY = 16;
+    const int gap     = 28;                          // space between bars
+    const int barH    = h - 2 * marginY - labelH;    // tallest bar that fits
+    const int cellH   = juce::jmax(4, barH / kPixelsPerBar);
+    const int realBarH = cellH * kPixelsPerBar;
+    const int barW    = juce::jlimit(24, 80, (w - (kNumBars + 1) * gap) / kNumBars);
 
-    const int barW  = 38;
-    const int cellH = juce::jmax(8, static_cast<int>(radius * 0.095f));
-    const int barH  = kPixelsPerBar * cellH;
+    const int totalW  = kNumBars * barW + (kNumBars - 1) * gap;
+    const int originX = (w - totalW) / 2;
+    const int originY = (h - realBarH - labelH) / 2;
 
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
     {
-        const float angle = kBarAngle[barIdx];
-        const float bx    = dcx + radius * std::sin(angle);
-        const float by    = cy  - radius * std::cos(angle);
-        const int   x0    = static_cast<int>(bx) - barW / 2;
-        const int   y0    = static_cast<int>(by) - barH / 2;
+        const int x0 = originX + barIdx * (barW + gap);
 
         const auto& bar = kBars[barIdx];
         for (int pixel = 1; pixel <= bar.pixels; ++pixel)
@@ -100,32 +96,14 @@ void DmxVisualizer::rebuildCache()
 
             const int row = bar.pixels - pixel;  // pixel 1 at bottom
             g.setColour(juce::Colour(r, gv, b));
-            g.fillRect(x0, y0 + row * cellH, barW, cellH - 1);
+            g.fillRect(x0, originY + row * cellH, barW, cellH - 1);
         }
 
         // Bar label
-        g.setColour(juce::Colour(0xff666666));
-        g.setFont(juce::FontOptions(9.0f));
+        g.setColour(juce::Colour(0xff888888));
+        g.setFont(juce::FontOptions(10.0f));
         g.drawText("bar " + juce::String(barIdx + 1),
-                   x0, y0 + barH + 2, barW, 12, juce::Justification::centred);
-    }
-
-    // Draw faint arc guide so the C shape is legible when bars are dark
-    {
-        juce::Path arc;
-        // arc from 0° to 180° going clockwise (right side), drawn as a polyline
-        const int kSegments = 40;
-        for (int i = 0; i <= kSegments; ++i)
-        {
-            const float t = static_cast<float>(i) / kSegments;
-            const float a = t * 3.14159265f;  // 0 → π
-            const float px = dcx + radius * std::sin(a);
-            const float py = cy  - radius * std::cos(a);
-            if (i == 0) arc.startNewSubPath(px, py);
-            else        arc.lineTo(px, py);
-        }
-        g.setColour(juce::Colour(0xff2a2a2a));
-        g.strokePath(arc, juce::PathStrokeType(1.5f));
+                   x0, originY + realBarH + 2, barW, 12, juce::Justification::centred);
     }
 }
 

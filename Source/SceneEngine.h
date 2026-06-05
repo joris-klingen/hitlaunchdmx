@@ -74,6 +74,11 @@ public:
     void setActiveScene(int idx)          noexcept;   // callable from GUI thread
     void setCrossfadeSec(float s)         noexcept  { crossfadeSec.store(s); }
 
+    // Live performance controls (all 1.0 = neutral / default).
+    void setGlobalDim(float d)            noexcept  { globalDim.store(d); }   // 0..1 master brightness
+    void setSpeedScale(float s)           noexcept  { speedScale.store(s); }  // global motion-rate multiplier
+    void setTailScale(float t)            noexcept  { tailScale.store(t); }   // chase/comet tail length multiplier
+
     // Launchpad setup: send Programmer-mode SysEx so pads send fixed notes.
     void sendLaunchpadProgrammerMode();
 
@@ -88,8 +93,10 @@ private:
     void hiResTimerCallback() override;
 
     // Compute RGB for one pixel of one bar from the given scene at time t.
+    // speedScale multiplies all motion rates; tailScale stretches comet tails.
     static void renderPixel(const Scene& scene, double t,
                             int barIdx, int pixel,
+                            float speedScale, float tailScale,
                             float& outR, float& outG, float& outB) noexcept;
 
     EnttecProDmx& dmx;
@@ -98,6 +105,9 @@ private:
 
     std::atomic<int>   activeScene  { 0 };
     std::atomic<float> crossfadeSec { 2.0f };
+    std::atomic<float> globalDim    { 1.0f };
+    std::atomic<float> speedScale   { 1.0f };
+    std::atomic<float> tailScale    { 1.0f };
 
     // Live and target frames — float [0..1], 1-based channel index.
     std::array<float, kRigChannels> liveFrame  {};

@@ -64,13 +64,16 @@ PaletteColor hsvToRgb(float h, float s, float v) noexcept
 // ---------------------------------------------------------------------------
 void SceneEngine::renderPixel(const Scene& sc, double t,
                               int barIdx, int pixel,
+                              float speedScale, float tailScale,
                               float& outR, float& outG, float& outB) noexcept
 {
-    const int   nPix  = kPixelsPerBar;
-    const int   nBars = kNumBars;
-    const float speed = sc.speed * static_cast<float>(sc.direction);
-    const float ft    = static_cast<float>(t) * std::abs(sc.speed);
-    const float fts   = static_cast<float>(t) * speed;  // signed speed
+    const int   nPix      = kPixelsPerBar;
+    const int   nBars     = kNumBars;
+    const float baseSpeed = sc.speed * speedScale;                    // scaled motion rate
+    const float speed     = baseSpeed * static_cast<float>(sc.direction);
+    const float ft        = static_cast<float>(t) * std::abs(baseSpeed);
+    const float fts       = static_cast<float>(t) * speed;            // signed speed
+    const float cometW    = juce::jlimit(0.02f, 1.0f, sc.width * tailScale);  // scaled tail length
 
     float brightness = 0.0f;
     PaletteColor col = sc.color1;
@@ -129,7 +132,7 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
         const int   headBar = static_cast<int>(fts * static_cast<float>(nBars)) % nBars;
         const int   adjHead = ((headBar % nBars) + nBars) % nBars;
         const int   behind  = behindWrapped(adjHead, barIdx, nBars, sc.direction);
-        brightness = cometBrightness(behind, nBars, sc.width) *
+        brightness = cometBrightness(behind, nBars, cometW) *
                      (0.5f + 0.5f * static_cast<float>(pixel) / static_cast<float>(nPix));
         col = sc.color1;
         break;
@@ -141,7 +144,7 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
     {
         const int headPix = ((static_cast<int>(fts * static_cast<float>(nPix)) % nPix) + nPix) % nPix + 1;
         const int behind  = behindWrapped(headPix, pixel, nPix, sc.direction);
-        brightness = cometBrightness(behind, nPix, sc.width);
+        brightness = cometBrightness(behind, nPix, cometW);
         col = sc.color1;
         break;
     }
@@ -151,10 +154,10 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
     case MotionType::VERT_CHASE_STAGGER:
     {
         const float offset   = static_cast<float>(barIdx) / static_cast<float>(nBars);
-        const float tOff     = fts + offset / std::abs(sc.speed);
+        const float tOff     = fts + offset / juce::jmax(0.0001f, std::abs(baseSpeed));
         const int   headPix  = ((static_cast<int>(tOff * static_cast<float>(nPix)) % nPix) + nPix) % nPix + 1;
         const int   behind   = behindWrapped(headPix, pixel, nPix, sc.direction);
-        brightness = cometBrightness(behind, nPix, sc.width);
+        brightness = cometBrightness(behind, nPix, cometW);
         col = sc.color1;
         break;
     }
@@ -384,6 +387,8 @@ void SceneEngine::hiResTimerCallback()
 
     const int   sceneIdx = activeScene.load();
     const auto& scene    = kScenes[static_cast<size_t>(sceneIdx)];
+    const float spd      = speedScale.load();
+    const float tail     = tailScale.load();
 
     // Build target frame
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
@@ -392,7 +397,7 @@ void SceneEngine::hiResTimerCallback()
         for (int pixel = 1; pixel <= bar.pixels; ++pixel)
         {
             float r, g, b;
-            renderPixel(scene, nowSec, barIdx, pixel, r, g, b);
+            renderPixel(scene, nowSec, barIdx, pixel, spd, tail, r, g, b);
             const auto ch = bar.channelsFor(pixel);
             const int  i0 = ch[0] - 1;  // 0-based index into targetFrame[]
             targetFrame[i0]     = r;
@@ -407,7 +412,10 @@ void SceneEngine::hiResTimerCallback()
     for (int ch = 0; ch < kRigChannels; ++ch)
         liveFrame[ch] += (targetFrame[ch] - liveFrame[ch]) * alpha;
 
-    // Push to DMX driver and shared DmxFrame for the GUI
+    // Push to DMX driver and shared DmxFrame for the GUI.
+    // Global dim is applied here (post-crossfade) so the live preview and the
+    // DMX output both reflect it while the crossfade stays in scene space.
+    const float dim = globalDim.load();
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
     {
         const auto& bar = kBars[barIdx];
@@ -419,12 +427,15 @@ void SceneEngine::hiResTimerCallback()
                 return static_cast<juce::uint8>(juce::jlimit(0, 255,
                     static_cast<int>(v * 255.0f + 0.5f)));
             };
-            dmx.setChannel(ch[0], toByte(liveFrame[i0]));
-            dmx.setChannel(ch[1], toByte(liveFrame[i0 + 1]));
-            dmx.setChannel(ch[2], toByte(liveFrame[i0 + 2]));
-            liveFrameOut.set(ch[0], liveFrame[i0]);
-            liveFrameOut.set(ch[1], liveFrame[i0 + 1]);
-            liveFrameOut.set(ch[2], liveFrame[i0 + 2]);
+            const float r = liveFrame[i0]     * dim;
+            const float g = liveFrame[i0 + 1] * dim;
+            const float b = liveFrame[i0 + 2] * dim;
+            dmx.setChannel(ch[0], toByte(r));
+            dmx.setChannel(ch[1], toByte(g));
+            dmx.setChannel(ch[2], toByte(b));
+            liveFrameOut.set(ch[0], r);
+            liveFrameOut.set(ch[1], g);
+            liveFrameOut.set(ch[2], b);
         }
     }
 }
