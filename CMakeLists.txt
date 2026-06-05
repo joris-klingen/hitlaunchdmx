@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 3.22)
 
+# Platform settings — override at configure time via -D flags.
+# Defaults: Monterey-compatible, Intel x86_64.
+#   Native arm64 build: cmake -S. -B build_native -DCMAKE_OSX_ARCHITECTURES=arm64
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 12.0)
+endif()
+if(NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "x86_64")
+endif()
+
 project(HitLaunchDmx VERSION 0.1.0 LANGUAGES C CXX)
 
 if(NOT APPLE)
@@ -9,10 +19,6 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Target: Intel i7, macOS Monterey
-set(CMAKE_OSX_DEPLOYMENT_TARGET 12.0)
-set(CMAKE_OSX_ARCHITECTURES "x86_64")
 
 include(FetchContent)
 FetchContent_Declare(
@@ -28,6 +34,8 @@ juce_add_gui_app(HitLaunchDmx
     PRODUCT_NAME                "HitLaunchDmx"
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           TRUE
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/Assets/icon_pink.png"
+    ICON_SMALL                  "${CMAKE_CURRENT_SOURCE_DIR}/Assets/icon_pink.png"
 )
 
 target_sources(HitLaunchDmx PRIVATE
