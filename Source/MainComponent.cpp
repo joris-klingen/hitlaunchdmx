@@ -91,8 +91,6 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xff111111));
 
-    const float padH = static_cast<float>(getHeight()) / 8.0f;
-
     for (int vRow = 0; vRow < 8; ++vRow)
     {
         for (int vCol = 0; vCol < 8; ++vCol)
@@ -103,21 +101,14 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
             const bool  active  = (sceneIdx == activeScene);
             const bool  hovered = (sceneIdx == hoveredScene);
 
-            // Category background tint (behind pad colour)
-            // vRow 0-1 = wild, 2-3 = medium, 4-7 = breathes
-            float catR = 0.07f, catG = 0.07f, catB = 0.07f;
-            if (vRow <= 1)      { catR = 0.10f; catG = 0.04f; catB = 0.04f; }  // wild: dark red
-            else if (vRow <= 3) { catR = 0.04f; catG = 0.04f; catB = 0.12f; }  // medium: dark blue
-
-            // Pad colour from scene's dominant color, at reduced brightness
-            float mul = active ? 0.85f : (hovered ? 0.55f : 0.30f);
-            // Ensure pad is never too dark to read (minimum visible)
-            const float maxC = juce::jmax(sc.color1.r, sc.color1.g, sc.color1.b);
-            if (maxC < 0.15f) mul = juce::jmax(mul, 0.6f);  // boost very-dark colours
-
-            const float pr = juce::jlimit(0.0f, 1.0f, sc.color1.r * mul + catR);
-            const float pg = juce::jlimit(0.0f, 1.0f, sc.color1.g * mul + catG);
-            const float pb = juce::jlimit(0.0f, 1.0f, sc.color1.b * mul + catB);
+            // Pad colour from the scene's dominant colour. Dim when idle so
+            // the active/hover pad stands out; floor very dark colours so the
+            // pad stays visible behind the label.
+            const float mul  = active ? 1.0f : (hovered ? 0.65f : 0.38f);
+            const float base = 0.05f;  // faint floor so black-ish pads read
+            const float pr = juce::jlimit(0.0f, 1.0f, sc.color1.r * mul + base);
+            const float pg = juce::jlimit(0.0f, 1.0f, sc.color1.g * mul + base);
+            const float pb = juce::jlimit(0.0f, 1.0f, sc.color1.b * mul + base);
             g.setColour(juce::Colour::fromFloatRGBA(pr, pg, pb, 1.0f));
             g.fillRoundedRectangle(bounds, 3.0f);
 
@@ -133,23 +124,15 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
                 g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
             }
 
-            // Scene name text
-            const float textBrightness = active ? 1.0f : (hovered ? 0.95f : 0.80f);
-            g.setColour(juce::Colours::white.withAlpha(textBrightness));
+            // Scene name text — pick black or white for contrast against the pad.
+            const float lum = 0.299f * pr + 0.587f * pg + 0.114f * pb;
+            const juce::Colour textCol = (lum > 0.55f) ? juce::Colours::black : juce::Colours::white;
+            g.setColour(textCol.withAlpha(active ? 1.0f : 0.92f));
             g.setFont(juce::FontOptions(8.5f));
             g.drawFittedText(sc.name, bounds.toNearestInt().reduced(2),
-                             juce::Justification::centred, 3, 0.85f);
+                             juce::Justification::centred, 3, 0.8f);
         }
     }
-
-    // Category divider lines
-    g.setColour(juce::Colour(0xff333333));
-    for (int divRow : { 2, 4 })  // between wild/medium and medium/breathe
-    {
-        const float y = divRow * padH;
-        g.drawLine(0.0f, y, static_cast<float>(getWidth()), y, 1.5f);
-    }
-
 }
 
 void VirtualLaunchpad::mouseDown(const juce::MouseEvent& e)
