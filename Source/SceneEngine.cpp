@@ -431,8 +431,8 @@ void SceneEngine::refreshLaunchpadLEDs()
     //   F0 00 20 29 02 0D 03  [spec...]  F7
     //   RGB spec = 03 <note> <r 0-127> <g 0-127> <b 0-127>
     // The grid shows the currently-viewed page; the active pad (if on this
-    // page) is full brightness, the rest dimmed. The top-row page buttons show
-    // which page is in view (active = white, others = dim white).
+    // page) is full brightness, the rest dimmed. The right-hand Scene Launch
+    // buttons select the page (active = white, others = dim white).
     std::vector<uint8_t> msg = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03 };
 
     for (int i = 0; i < kScenesPerPage; ++i)
@@ -455,7 +455,7 @@ void SceneEngine::refreshLaunchpadLEDs()
         msg.push_back(to7(sc.color1.b));
     }
 
-    // Page-selector buttons (top row).
+    // Page-selector buttons (right-hand Scene Launch column).
     for (int p = 0; p < kNumPages; ++p)
     {
         const uint8_t lvl = (p == page) ? 127 : 12;  // white: bright = current

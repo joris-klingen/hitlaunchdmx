@@ -247,18 +247,22 @@ inline constexpr int noteToSceneIndex(int note) noexcept
     return row * 8 + col;
 }
 
-// The top row of round buttons sends notes 91..98 in Programmer mode.
-// We use the leftmost ones as page selectors (91 = page 0, 92 = page 1, ...).
+// The right-hand "Scene Launch" buttons send notes 19, 29, ... 89 in
+// Programmer mode (column 9 of each row). We use them as page selectors,
+// top-down: row 8 (note 89) = page 0, row 7 (note 79) = page 1, ...
 // Returns the 0-based page, or -1 if `note` is not a page button.
-inline constexpr int kPageButtonBase = 91;
 inline constexpr int noteToPageIndex(int note) noexcept
 {
-    const int p = note - kPageButtonBase;
-    return (p >= 0 && p < kNumPages) ? p : -1;
+    const int row = note / 10;       // 1..8
+    const int col = note % 10;       // 9 for the scene-launch column
+    if (col != 9 || row < 1 || row > 8)
+        return -1;
+    const int page = 8 - row;        // row 8 -> page 0 (top button)
+    return (page >= 0 && page < kNumPages) ? page : -1;
 }
 inline constexpr int pageButtonNote(int page) noexcept
 {
-    return kPageButtonBase + page;
+    return (8 - page) * 10 + 9;      // page 0 -> 89, page 1 -> 79, ...
 }
 
 }  // namespace hitlaunchdmx
