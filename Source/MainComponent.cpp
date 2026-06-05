@@ -128,7 +128,7 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
             const float lum = 0.299f * pr + 0.587f * pg + 0.114f * pb;
             const juce::Colour textCol = (lum > 0.55f) ? juce::Colours::black : juce::Colours::white;
             g.setColour(textCol.withAlpha(active ? 1.0f : 0.92f));
-            g.setFont(juce::FontOptions(8.5f));
+            g.setFont(juce::FontOptions(10.5f));
             g.drawFittedText(sc.name, bounds.toNearestInt().reduced(2),
                              juce::Justification::centred, 3, 0.8f);
         }
@@ -449,18 +449,31 @@ void MainComponent::resized()
     // ── centre ────────────────────────────────────────────────────────────
     visualizer.setBounds(centrePanel.reduced(4));
 
-    // ── right: page tabs + launchpad grid ─────────────────────────────────
+    // ── right: square launchpad + page buttons in a column on its right ───
+    // Mirrors a real Launchpad: 8x8 square grid, Scene Launch buttons down
+    // the right edge (page 1 aligned to the top row).
     {
-        auto tabRow = rightPanel.removeFromTop(26);
-        const int tabW = tabRow.getWidth() / kNumPages;
+        const int gap     = 8;
+        const int btnColW = 64;
+        const int availW  = rightPanel.getWidth() - btnColW - gap;
+        const int availH  = rightPanel.getHeight();
+        const int side    = juce::jmax(64, juce::jmin(availW, availH));  // square
+        const int rowH    = side / 8;
+
+        const int clusterW = side + gap + btnColW;
+        const int startX   = rightPanel.getX() + (rightPanel.getWidth() - clusterW) / 2;
+        const int startY   = rightPanel.getY() + (availH - side) / 2;
+
+        virtualLaunchpad.setBounds(startX, startY, side, side);
+
+        // Page buttons: one per grid row from the top (page 0 = top row).
+        const int btnX = startX + side + gap;
         for (int p = 0; p < kNumPages; ++p)
         {
-            auto cell = (p == kNumPages - 1) ? tabRow : tabRow.removeFromLeft(tabW);
-            pageTabs[static_cast<size_t>(p)].setBounds(cell.reduced(2, 0));
+            pageTabs[static_cast<size_t>(p)].setBounds(
+                btnX, startY + p * rowH, btnColW, rowH - 3);
         }
-        rightPanel.removeFromTop(4);
     }
-    virtualLaunchpad.setBounds(rightPanel);
 }
 
 }  // namespace hitlaunchdmx
