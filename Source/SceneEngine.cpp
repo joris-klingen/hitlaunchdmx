@@ -352,40 +352,61 @@ void SceneEngine::closeMidiOutput()
 
 void SceneEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& msg)
 {
+    // The 8x8 grid sends Note On, but the Launchpad's edge buttons (the Scene
+    // Launch column and the top row) send Control Change in Programmer mode.
+    // We accept BOTH and interpret the number with the same 2-digit scheme.
+    int  buttonId = -1;   // note/CC number to act on (a press)
+    bool isPress  = false;
+
     MidiLogEntry entry;
+    entry.channel = static_cast<juce::uint8>(msg.getChannel());
+
     if (msg.isNoteOn())
     {
         entry.kind     = MidiLogEntry::Kind::NoteOn;
-        entry.channel  = static_cast<juce::uint8>(msg.getChannel());
         entry.pitch    = static_cast<juce::uint8>(msg.getNoteNumber());
         entry.velocity = static_cast<juce::uint8>(msg.getVelocity());
         midiLog.push(entry);
-
-        const int note = msg.getNoteNumber();
-        const int idx  = noteToSceneIndex(note);   // in-page 0..63
-        if (idx >= 0)
-        {
-            // Grid pad on the currently-viewed page selects that scene.
-            activeScene.store(viewPage.load() * kScenesPerPage + idx);
-            refreshLaunchpadLEDs();
-        }
-        else
-        {
-            const int page = noteToPageIndex(note);  // top-row page button
-            if (page >= 0)
-            {
-                viewPage.store(page);
-                refreshLaunchpadLEDs();
-            }
-        }
+        buttonId = msg.getNoteNumber();
+        isPress  = true;
     }
     else if (msg.isNoteOff())
     {
         entry.kind     = MidiLogEntry::Kind::NoteOff;
-        entry.channel  = static_cast<juce::uint8>(msg.getChannel());
         entry.pitch    = static_cast<juce::uint8>(msg.getNoteNumber());
         entry.velocity = static_cast<juce::uint8>(msg.getVelocity());
         midiLog.push(entry);
+    }
+    else if (msg.isController())
+    {
+        // Treat a non-zero CC value as a button press; the CC number uses the
+        // same positional id as the note would (e.g. 89 = top Scene Launch).
+        const int cc  = msg.getControllerNumber();
+        const int val = msg.getControllerValue();
+        entry.kind     = (val > 0) ? MidiLogEntry::Kind::NoteOn : MidiLogEntry::Kind::NoteOff;
+        entry.pitch    = static_cast<juce::uint8>(cc);
+        entry.velocity = static_cast<juce::uint8>(val);
+        midiLog.push(entry);
+        if (val > 0) { buttonId = cc; isPress = true; }
+    }
+
+    if (! isPress)
+        return;
+
+    const int idx = noteToSceneIndex(buttonId);   // in-page 0..63
+    if (idx >= 0)
+    {
+        // Grid pad on the currently-viewed page selects that scene.
+        activeScene.store(viewPage.load() * kScenesPerPage + idx);
+        refreshLaunchpadLEDs();
+        return;
+    }
+
+    const int page = noteToPageIndex(buttonId);   // Scene Launch page button
+    if (page >= 0)
+    {
+        viewPage.store(page);
+        refreshLaunchpadLEDs();
     }
 }
 
