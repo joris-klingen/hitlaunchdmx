@@ -349,6 +349,15 @@ void SceneEngine::sendLaunchpadProgrammerMode()
     midiOut->sendMessageNow(juce::MidiMessage(sysex, sizeof(sysex)));
 }
 
+void SceneEngine::setActiveScene(int idx) noexcept
+{
+    if (idx >= 0 && idx < 64)
+    {
+        activeScene.store(idx);
+        refreshLaunchpadLEDs();
+    }
+}
+
 void SceneEngine::refreshLaunchpadLEDs()
 {
     if (!midiOut) return;

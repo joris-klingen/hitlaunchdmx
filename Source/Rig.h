@@ -43,15 +43,16 @@ inline constexpr std::array<BarFixture, kNumBars> kBars {{
 }};
 
 // Ring angles for the visualiser (radians, clockwise from top).
-//   bar 0 → 12 o'clock (top)
-//   bar 1 →  3 o'clock (right)
-//   bar 2 →  6 o'clock (bottom)
-//   bar 3 →  9 o'clock (left)
+// Bars are arranged in a C-arc, open end to the left:
+//   bar 0 → 12 o'clock (top of C)
+//   bar 1 →  2 o'clock (60°)
+//   bar 2 →  4 o'clock (120°)
+//   bar 3 →  6 o'clock (bottom of C)
 inline constexpr float kBarAngle[kNumBars] = {
-    0.0f,                                // 12 o'clock
-    3.14159265f / 2.0f,                  //  3 o'clock
-    3.14159265f,                         //  6 o'clock
-    3.0f * 3.14159265f / 2.0f,           //  9 o'clock
+    0.0f,                                // 12 o'clock  (top)
+    1.04719755f,                         //  2 o'clock  (π/3 = 60°)
+    2.09439510f,                         //  4 o'clock  (2π/3 = 120°)
+    3.14159265f,                         //  6 o'clock  (bottom)
 };
 
 }  // namespace hitlaunchdmx

@@ -1,14 +1,138 @@
 #include "MainComponent.h"
 #include "Scene.h"
 
+#include <cmath>
+
 namespace hitlaunchdmx
 {
 
+// ============================================================================
+// VirtualLaunchpad
+// ============================================================================
+
+VirtualLaunchpad::VirtualLaunchpad(SceneEngine& eng) : engine(eng)
+{
+    setOpaque(true);
+}
+
+juce::Rectangle<float> VirtualLaunchpad::cellBoundsF(int vRow, int vCol) const
+{
+    const float padW = static_cast<float>(getWidth())  / 8.0f;
+    const float padH = static_cast<float>(getHeight()) / 8.0f;
+    return { vCol * padW + 1.5f, vRow * padH + 1.5f, padW - 3.0f, padH - 3.0f };
+}
+
+int VirtualLaunchpad::cellForPoint(juce::Point<int> pt) const
+{
+    const float padW = static_cast<float>(getWidth())  / 8.0f;
+    const float padH = static_cast<float>(getHeight()) / 8.0f;
+    const int vCol = juce::jlimit(0, 7, static_cast<int>(pt.x / padW));
+    const int vRow = juce::jlimit(0, 7, static_cast<int>(pt.y / padH));
+    return sceneForCell(vRow, vCol);
+}
+
+void VirtualLaunchpad::paint(juce::Graphics& g)
+{
+    g.fillAll(juce::Colour(0xff111111));
+
+    const float padH = static_cast<float>(getHeight()) / 8.0f;
+
+    for (int vRow = 0; vRow < 8; ++vRow)
+    {
+        for (int vCol = 0; vCol < 8; ++vCol)
+        {
+            const int sceneIdx = sceneForCell(vRow, vCol);
+            const auto& sc     = kScenes[static_cast<size_t>(sceneIdx)];
+            const auto  bounds = cellBoundsF(vRow, vCol);
+            const bool  active  = (sceneIdx == activeScene);
+            const bool  hovered = (sceneIdx == hoveredScene);
+
+            // Category background tint (behind pad colour)
+            // vRow 0-1 = wild, 2-3 = medium, 4-7 = breathes
+            float catR = 0.07f, catG = 0.07f, catB = 0.07f;
+            if (vRow <= 1)      { catR = 0.10f; catG = 0.04f; catB = 0.04f; }  // wild: dark red
+            else if (vRow <= 3) { catR = 0.04f; catG = 0.04f; catB = 0.12f; }  // medium: dark blue
+
+            // Pad colour from scene's dominant color, at reduced brightness
+            float mul = active ? 0.85f : (hovered ? 0.55f : 0.30f);
+            // Ensure pad is never too dark to read (minimum visible)
+            const float maxC = juce::jmax(sc.color1.r, sc.color1.g, sc.color1.b);
+            if (maxC < 0.15f) mul = juce::jmax(mul, 0.6f);  // boost very-dark colours
+
+            const float pr = juce::jlimit(0.0f, 1.0f, sc.color1.r * mul + catR);
+            const float pg = juce::jlimit(0.0f, 1.0f, sc.color1.g * mul + catG);
+            const float pb = juce::jlimit(0.0f, 1.0f, sc.color1.b * mul + catB);
+            g.setColour(juce::Colour::fromFloatRGBA(pr, pg, pb, 1.0f));
+            g.fillRoundedRectangle(bounds, 3.0f);
+
+            // Active border
+            if (active)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.9f));
+                g.drawRoundedRectangle(bounds, 3.0f, 2.0f);
+            }
+            else if (hovered)
+            {
+                g.setColour(juce::Colours::white.withAlpha(0.35f));
+                g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+            }
+
+            // Scene name text
+            const float textBrightness = active ? 1.0f : (hovered ? 0.95f : 0.80f);
+            g.setColour(juce::Colours::white.withAlpha(textBrightness));
+            g.setFont(juce::FontOptions(8.5f));
+            g.drawFittedText(sc.name, bounds.toNearestInt().reduced(2),
+                             juce::Justification::centred, 3, 0.85f);
+        }
+    }
+
+    // Category divider lines
+    g.setColour(juce::Colour(0xff333333));
+    for (int divRow : { 2, 4 })  // between wild/medium and medium/breathe
+    {
+        const float y = divRow * padH;
+        g.drawLine(0.0f, y, static_cast<float>(getWidth()), y, 1.5f);
+    }
+
+}
+
+void VirtualLaunchpad::mouseDown(const juce::MouseEvent& e)
+{
+    const int idx = cellForPoint(e.getPosition());
+    if (idx >= 0 && idx < 64)
+    {
+        activeScene = idx;
+        engine.setActiveScene(idx);
+        repaint();
+    }
+}
+
+void VirtualLaunchpad::mouseMove(const juce::MouseEvent& e)
+{
+    const int idx = cellForPoint(e.getPosition());
+    if (idx != hoveredScene)
+    {
+        hoveredScene = idx;
+        repaint();
+    }
+}
+
+void VirtualLaunchpad::mouseExit(const juce::MouseEvent&)
+{
+    hoveredScene = -1;
+    repaint();
+}
+
+// ============================================================================
+// MainComponent
+// ============================================================================
+
 MainComponent::MainComponent()
     : engine(dmx, liveFrame, midiLog, 2.0f),
-      visualizer(liveFrame, 0)
+      visualizer(liveFrame, 0),
+      virtualLaunchpad(engine)
 {
-    setSize(960, 640);
+    setSize(1160, 700);
 
     // ── left panel ────────────────────────────────────────────────────────
     addAndMakeVisible(midiInLabel);
@@ -43,30 +167,26 @@ MainComponent::MainComponent()
     midiLogEditor.setMultiLine(true);
     midiLogEditor.setReadOnly(true);
     midiLogEditor.setScrollbarsShown(true);
-    midiLogEditor.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
+    midiLogEditor.setFont(juce::Font(juce::FontOptions(
+        juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
 
     // ── centre visualiser ─────────────────────────────────────────────────
     addAndMakeVisible(visualizer);
 
-    // ── right panel ───────────────────────────────────────────────────────
-    addAndMakeVisible(sceneNameLabel);
-    addAndMakeVisible(sceneValueLabel);
-    sceneValueLabel.setFont(juce::FontOptions(13.0f));
-    sceneValueLabel.setJustificationType(juce::Justification::topLeft);
+    // ── right: virtual launchpad + crossfade ─────────────────────────────
+    addAndMakeVisible(virtualLaunchpad);
 
     addAndMakeVisible(xfadeLabel);
     addAndMakeVisible(xfadeSlider);
-    xfadeSlider.setRange(0.1, 5.0, 0.1);
+    xfadeSlider.setRange(0.0, 5.0, 0.1);
     xfadeSlider.setValue(2.0);
     xfadeSlider.setTextValueSuffix(" s");
     xfadeSlider.onValueChange = [this] {
         engine.setCrossfadeSec(static_cast<float>(xfadeSlider.getValue()));
     };
 
-    // Populate device menus and start engine
     buildMidiDeviceMenus();
     engine.start();
-
     startTimerHz(15);
 }
 
@@ -92,31 +212,26 @@ void MainComponent::buildMidiDeviceMenus()
 
     // Auto-select Launchpad if present
     for (int i = 0; i < midiInCombo.getNumItems(); ++i)
-    {
         if (midiInCombo.getItemText(i).containsIgnoreCase("Launchpad"))
         {
             midiInCombo.setSelectedItemIndex(i, juce::dontSendNotification);
             engine.openMidiInput(midiInCombo.getItemText(i));
         }
-    }
+
     for (int i = 0; i < midiOutCombo.getNumItems(); ++i)
-    {
         if (midiOutCombo.getItemText(i).containsIgnoreCase("Launchpad"))
         {
             midiOutCombo.setSelectedItemIndex(i, juce::dontSendNotification);
             engine.openMidiOutput(midiOutCombo.getItemText(i));
         }
-    }
 
     midiInCombo.onChange = [this] {
         const int idx = midiInCombo.getSelectedItemIndex();
-        if (idx >= 0)
-            engine.openMidiInput(midiInCombo.getItemText(idx));
+        if (idx >= 0) engine.openMidiInput(midiInCombo.getItemText(idx));
     };
     midiOutCombo.onChange = [this] {
         const int idx = midiOutCombo.getSelectedItemIndex();
-        if (idx >= 0)
-            engine.openMidiOutput(midiOutCombo.getItemText(idx));
+        if (idx >= 0) engine.openMidiOutput(midiOutCombo.getItemText(idx));
     };
 }
 
@@ -134,28 +249,25 @@ void MainComponent::disconnectDmx()
 
 void MainComponent::timerCallback()
 {
-    // Update scene label
     const int activeIdx = engine.getActiveScene();
-    visualizer.setActiveScene(activeIdx);
-    if (activeIdx >= 0 && activeIdx < 64)
-        sceneValueLabel.setText(juce::String(kScenes[static_cast<size_t>(activeIdx)].name),
-                                juce::dontSendNotification);
 
-    // Drain MIDI log
+    // Keep virtual launchpad in sync with MIDI-triggered changes
+    virtualLaunchpad.setActiveScene(activeIdx);
+
+    // Drain MIDI log (capped at 20 lines)
     juce::String newLines;
     while (auto entry = midiLog.pop())
     {
         const auto& e = *entry;
-        const juce::String kind = e.kind == MidiLogEntry::Kind::NoteOn ? "ON " : "off";
-        newLines += "[" + kind + "] ch" + juce::String(e.channel)
-                 + " n=" + juce::String(e.pitch)
-                 + " v=" + juce::String(e.velocity) + "\n";
+        newLines += juce::String(e.kind == MidiLogEntry::Kind::NoteOn ? "[ON ] " : "[off] ")
+                 + "ch" + juce::String(e.channel)
+                 + " n="  + juce::String(e.pitch)
+                 + " v="  + juce::String(e.velocity) + "\n";
     }
     if (newLines.isNotEmpty())
     {
-        const juce::String existing = midiLogEditor.getText();
-        const juce::StringArray lines = juce::StringArray::fromLines(existing + newLines);
-        // Keep last 20 lines
+        const juce::StringArray lines =
+            juce::StringArray::fromLines(midiLogEditor.getText() + newLines);
         const int start = juce::jmax(0, lines.size() - 20);
         juce::String trimmed;
         for (int i = start; i < lines.size(); ++i)
@@ -164,9 +276,7 @@ void MainComponent::timerCallback()
         midiLogEditor.moveCaretToEnd();
     }
 
-    // Update DMX status occasionally
     dmxStatusLabel.setText(dmx.getStatusText(), juce::dontSendNotification);
-
     visualizer.repaintIfChanged();
 }
 
@@ -177,42 +287,47 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::resized()
 {
-    auto area   = getLocalBounds().reduced(8);
+    auto area = getLocalBounds().reduced(8);
     const int leftW  = 180;
-    const int rightW = 180;
+    const int rightW = 490;
 
-    auto leftPanel   = area.removeFromLeft(leftW);
-    auto rightPanel  = area.removeFromRight(rightW);
+    auto leftPanel  = area.removeFromLeft(leftW);
+    area.removeFromLeft(6);
+    auto rightPanel = area.removeFromRight(rightW);
+    area.removeFromRight(6);
     auto centrePanel = area;
 
-    // Left panel
-    midiInLabel.setBounds(leftPanel.removeFromTop(16));
-    midiInCombo.setBounds(leftPanel.removeFromTop(24));
+    // ── left ──────────────────────────────────────────────────────────────
+    midiInLabel  .setBounds(leftPanel.removeFromTop(16));
+    midiInCombo  .setBounds(leftPanel.removeFromTop(24));
     leftPanel.removeFromTop(4);
-    midiOutLabel.setBounds(leftPanel.removeFromTop(16));
-    midiOutCombo.setBounds(leftPanel.removeFromTop(24));
+    midiOutLabel .setBounds(leftPanel.removeFromTop(16));
+    midiOutCombo .setBounds(leftPanel.removeFromTop(24));
     leftPanel.removeFromTop(8);
-    connectBtn.setBounds(leftPanel.removeFromTop(26));
+    connectBtn   .setBounds(leftPanel.removeFromTop(26));
     leftPanel.removeFromTop(4);
     disconnectBtn.setBounds(leftPanel.removeFromTop(26));
     leftPanel.removeFromTop(4);
-    blackoutBtn.setBounds(leftPanel.removeFromTop(26));
+    blackoutBtn  .setBounds(leftPanel.removeFromTop(26));
     leftPanel.removeFromTop(4);
-    lpModeBtn.setBounds(leftPanel.removeFromTop(26));
+    lpModeBtn    .setBounds(leftPanel.removeFromTop(26));
     leftPanel.removeFromTop(8);
-    dmxStatusLabel.setBounds(leftPanel.removeFromTop(52));
+    dmxStatusLabel.setBounds(leftPanel.removeFromTop(50));
     leftPanel.removeFromTop(4);
     midiLogEditor.setBounds(leftPanel);
 
-    // Centre visualiser
-    visualizer.setBounds(centrePanel.reduced(8));
+    // ── centre ────────────────────────────────────────────────────────────
+    visualizer.setBounds(centrePanel.reduced(4));
 
-    // Right panel
-    sceneNameLabel.setBounds(rightPanel.removeFromTop(16));
-    sceneValueLabel.setBounds(rightPanel.removeFromTop(48));
-    rightPanel.removeFromTop(16);
-    xfadeLabel.setBounds(rightPanel.removeFromTop(16));
-    xfadeSlider.setBounds(rightPanel.removeFromTop(40));
+    // ── right: launchpad grid + crossfade ─────────────────────────────────
+    // Crossfade at the bottom
+    rightPanel.removeFromBottom(4);
+    xfadeSlider.setBounds(rightPanel.removeFromBottom(36));
+    xfadeLabel .setBounds(rightPanel.removeFromBottom(18));
+    rightPanel.removeFromBottom(8);
+
+    // Virtual launchpad fills the rest
+    virtualLaunchpad.setBounds(rightPanel);
 }
 
 }  // namespace hitlaunchdmx

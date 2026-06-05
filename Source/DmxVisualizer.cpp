@@ -69,54 +69,63 @@ void DmxVisualizer::rebuildCache()
     juce::Graphics g(cachedImage);
     g.fillAll(juce::Colour(0xff141414));
 
-    // Ring parameters
-    const float cx      = static_cast<float>(w) * 0.5f;
-    const float cy      = static_cast<float>(h) * 0.5f;
-    const float radius  = std::min(cx, cy) * 0.60f;
-    const int   barW    = 36;
-    const int   cellH   = static_cast<int>(radius * 0.09f);
-    const int   barH    = kPixelsPerBar * cellH;
+    // The 4 bars sit on a C-arc (0°→60°→120°→180°, open end left).
+    // Centre the arc horizontally by shifting the pivot leftward.
+    // Average bar x-offset = R * (sin0 + sin60 + sin120 + sin180) / 4 = R*0.433
+    // so we shift the draw-centre left by that amount.
+    const float cx     = static_cast<float>(w) * 0.5f;
+    const float cy     = static_cast<float>(h) * 0.5f;
+    const float radius = std::min(cx, cy) * 0.62f;
+    const float dcx    = cx - radius * 0.43f;   // compensate for C being right-heavy
 
-    // Draw each bar centred at its clock position
+    const int barW  = 38;
+    const int cellH = juce::jmax(8, static_cast<int>(radius * 0.095f));
+    const int barH  = kPixelsPerBar * cellH;
+
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
     {
-        const float angle = kBarAngle[barIdx];  // radians, 0 = top, CW
-        // Centre of bar strip
-        const float bx = cx + radius * std::sin(angle);
-        const float by = cy - radius * std::cos(angle);
-        const int   x0 = static_cast<int>(bx) - barW / 2;
-        const int   y0 = static_cast<int>(by) - barH / 2;
+        const float angle = kBarAngle[barIdx];
+        const float bx    = dcx + radius * std::sin(angle);
+        const float by    = cy  - radius * std::cos(angle);
+        const int   x0    = static_cast<int>(bx) - barW / 2;
+        const int   y0    = static_cast<int>(by) - barH / 2;
 
         const auto& bar = kBars[barIdx];
         for (int pixel = 1; pixel <= bar.pixels; ++pixel)
         {
-            const auto ch = bar.channelsFor(pixel);
-            const uint8_t r = frame.get(ch[0]);
+            const auto ch  = bar.channelsFor(pixel);
+            const uint8_t r  = frame.get(ch[0]);
             const uint8_t gv = frame.get(ch[1]);
             const uint8_t b  = frame.get(ch[2]);
 
-            // pixel 1 is the bottom of the bar
-            const int row = bar.pixels - pixel;
+            const int row = bar.pixels - pixel;  // pixel 1 at bottom
             g.setColour(juce::Colour(r, gv, b));
             g.fillRect(x0, y0 + row * cellH, barW, cellH - 1);
         }
 
         // Bar label
-        g.setColour(juce::Colours::grey);
+        g.setColour(juce::Colour(0xff666666));
         g.setFont(juce::FontOptions(9.0f));
-        const juce::String label = "bar " + juce::String(barIdx + 1);
-        g.drawText(label, x0, y0 + barH + 2, barW, 12, juce::Justification::centred);
+        g.drawText("bar " + juce::String(barIdx + 1),
+                   x0, y0 + barH + 2, barW, 12, juce::Justification::centred);
     }
 
-    // Scene name in the centre
-    if (activeSceneIdx >= 0 && activeSceneIdx < 64)
+    // Draw faint arc guide so the C shape is legible when bars are dark
     {
-        const auto& sc = kScenes[static_cast<size_t>(activeSceneIdx)];
-        g.setColour(juce::Colour(0xffaaaaaa));
-        g.setFont(juce::FontOptions(11.0f));
-        g.drawText(juce::String(sc.name),
-                   static_cast<int>(cx) - 70, static_cast<int>(cy) - 8, 140, 16,
-                   juce::Justification::centred);
+        juce::Path arc;
+        // arc from 0° to 180° going clockwise (right side), drawn as a polyline
+        const int kSegments = 40;
+        for (int i = 0; i <= kSegments; ++i)
+        {
+            const float t = static_cast<float>(i) / kSegments;
+            const float a = t * 3.14159265f;  // 0 → π
+            const float px = dcx + radius * std::sin(a);
+            const float py = cy  - radius * std::cos(a);
+            if (i == 0) arc.startNewSubPath(px, py);
+            else        arc.lineTo(px, py);
+        }
+        g.setColour(juce::Colour(0xff2a2a2a));
+        g.strokePath(arc, juce::PathStrokeType(1.5f));
     }
 }
 

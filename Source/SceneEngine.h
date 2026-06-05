@@ -70,8 +70,9 @@ public:
     juce::String activeMidiInputName()  const { return openInputName; }
     juce::String activeMidiOutputName() const { return openOutputName; }
 
-    int  getActiveScene()      const noexcept { return activeScene.load(); }
-    void setCrossfadeSec(float s)   noexcept  { crossfadeSec.store(s); }
+    int  getActiveScene()           const noexcept { return activeScene.load(); }
+    void setActiveScene(int idx)          noexcept;   // callable from GUI thread
+    void setCrossfadeSec(float s)         noexcept  { crossfadeSec.store(s); }
 
     // Launchpad setup: send Programmer-mode SysEx so pads send fixed notes.
     void sendLaunchpadProgrammerMode();
