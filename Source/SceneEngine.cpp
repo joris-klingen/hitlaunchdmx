@@ -67,8 +67,13 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
                               float speedScale, float tailScale,
                               float& outR, float& outG, float& outB) noexcept
 {
-    const int   nPix      = kPixelsPerBar;
-    const int   nBars     = kNumBars;
+    // The rig is one long vertical line of kNumLeds (72) pixels.
+    // gid 0 = very bottom (bar 0, pixel 1); gid 71 = very top (bar 3, pixel 18).
+    // Every positional recipe runs over this full span.
+    const int   nLeds     = kNumLeds;                                 // 72
+    const float fLeds     = static_cast<float>(nLeds);
+    const int   gid       = gidFor(barIdx, pixel);                    // 0..71
+    const float gf        = static_cast<float>(gid);
     const float baseSpeed = sc.speed * speedScale;                    // scaled motion rate
     const float speed     = baseSpeed * static_cast<float>(sc.direction);
     const float ft        = static_cast<float>(t) * std::abs(baseSpeed);
@@ -81,93 +86,88 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
     switch (sc.motion)
     {
     // ── BREATHE ──────────────────────────────────────────────────────────
+    // Whole 72-line breathes together.
     case MotionType::BREATHE:
         brightness = (1.0f + std::sin(kTwoPi * ft)) * 0.5f;
         col = sc.color1;
         break;
 
     // ── MOON_RISE ─────────────────────────────────────────────────────────
-    // A glow that climbs vertically: sinusoidal vertical envelope that moves up.
+    // A glow that climbs the full 72-line from below the bottom to past the top.
     case MotionType::MOON_RISE:
     {
-        const float phase   = std::fmod(ft, 1.0f);
-        const float centre  = phase * static_cast<float>(nPix + 4) - 2.0f;  // −2..nPix+2
-        const float pf      = static_cast<float>(pixel);
-        const float sigma   = static_cast<float>(nPix) * 0.25f;
-        const float d       = pf - centre;
+        const float phase  = std::fmod(ft, 1.0f);
+        const float centre = phase * (fLeds + 16.0f) - 8.0f;         // −8 .. nLeds+8
+        const float sigma  = fLeds * 0.14f;
+        const float d      = gf - centre;
         brightness = std::exp(-(d * d) / (2.0f * sigma * sigma));
         col = sc.color1;
         break;
     }
 
     // ── DRIFT_BALL ────────────────────────────────────────────────────────
-    // Gaussian blob travels around the ring; vertical envelope is a fixed broad Gaussian.
+    // A soft Gaussian ball drifts smoothly up and down the full 72-line.
     case MotionType::DRIFT_BALL:
     {
-        const float ringPos  = std::fmod(fts * static_cast<float>(nBars), static_cast<float>(nBars));
-        const float ringDist = gaussRing(static_cast<float>(barIdx), ringPos, static_cast<float>(nBars), sc.width);
-        const float vertCentre = static_cast<float>(nPix) * 0.5f + 0.5f;
-        const float d          = static_cast<float>(pixel) - vertCentre;
-        const float sigma      = static_cast<float>(nPix) * 0.30f;
-        const float vertFall   = std::exp(-(d * d) / (2.0f * sigma * sigma));
-        brightness = ringDist * vertFall;
+        const float centre = (fLeds - 1.0f) * 0.5f * (1.0f - std::cos(kTwoPi * ft));
+        const float sigma  = juce::jmax(1.0f, sc.width * fLeds * 0.35f);
+        const float d      = gf - centre;
+        brightness = std::exp(-(d * d) / (2.0f * sigma * sigma));
         col = sc.color1;
         break;
     }
 
-    // ── RING_ROTATE ───────────────────────────────────────────────────────
-    // Full-bar lit highlight sweeps around the ring.
+    // ── RING_ROTATE → line sweep ────────────────────────────────────────────
+    // A wide highlight sweeps along the line, wrapping bottom↔top.
     case MotionType::RING_ROTATE:
     {
-        const float ringPos = std::fmod(fts * static_cast<float>(nBars), static_cast<float>(nBars));
-        brightness = gaussRing(static_cast<float>(barIdx), ringPos, static_cast<float>(nBars), 0.30f);
+        const float pos = std::fmod(std::fmod(fts, 1.0f) + 1.0f, 1.0f) * fLeds;
+        brightness = gaussRing(gf, pos, fLeds, 0.18f);
         col = sc.color1;
         break;
     }
 
-    // ── RING_COMET ────────────────────────────────────────────────────────
-    // Comet with tail travels bar-by-bar around the ring; all pixels of a bar lit together.
+    // ── RING_COMET → line comet ─────────────────────────────────────────────
+    // Comet with tail travels the full 72-line, wrapping around the ends.
     case MotionType::RING_COMET:
     {
-        const int   headBar = static_cast<int>(fts * static_cast<float>(nBars)) % nBars;
-        const int   adjHead = ((headBar % nBars) + nBars) % nBars;
-        const int   behind  = behindWrapped(adjHead, barIdx, nBars, sc.direction);
-        brightness = cometBrightness(behind, nBars, cometW) *
-                     (0.5f + 0.5f * static_cast<float>(pixel) / static_cast<float>(nPix));
+        const int head   = ((static_cast<int>(fts * fLeds) % nLeds) + nLeds) % nLeds;
+        const int behind = behindWrapped(head, gid, nLeds, sc.direction);
+        brightness = cometBrightness(behind, nLeds, cometW);
         col = sc.color1;
         break;
     }
 
-    // ── VERT_CHASE ────────────────────────────────────────────────────────
-    // Vertical comet, all bars in phase.
+    // ── VERT_CHASE → line chase ─────────────────────────────────────────────
+    // Comet chase up/down the full 72-line, wrapping.
     case MotionType::VERT_CHASE:
     {
-        const int headPix = ((static_cast<int>(fts * static_cast<float>(nPix)) % nPix) + nPix) % nPix + 1;
-        const int behind  = behindWrapped(headPix, pixel, nPix, sc.direction);
-        brightness = cometBrightness(behind, nPix, cometW);
+        const int head   = ((static_cast<int>(fts * fLeds) % nLeds) + nLeds) % nLeds;
+        const int behind = behindWrapped(head, gid, nLeds, sc.direction);
+        brightness = cometBrightness(behind, nLeds, cometW);
         col = sc.color1;
         break;
     }
 
-    // ── VERT_CHASE_STAGGER ────────────────────────────────────────────────
-    // Vertical comet with each bar phase-offset by 90° around the ring.
+    // ── VERT_CHASE_STAGGER → PING-PONG ──────────────────────────────────────
+    // Comet bounces up the full line then back down (no wrap; reflects at ends).
     case MotionType::VERT_CHASE_STAGGER:
     {
-        const float offset   = static_cast<float>(barIdx) / static_cast<float>(nBars);
-        const float tOff     = fts + offset / juce::jmax(0.0001f, std::abs(baseSpeed));
-        const int   headPix  = ((static_cast<int>(tOff * static_cast<float>(nPix)) % nPix) + nPix) % nPix + 1;
-        const int   behind   = behindWrapped(headPix, pixel, nPix, sc.direction);
-        brightness = cometBrightness(behind, nPix, cometW);
+        const float ph = std::fmod(ft, 2.0f);                       // 0..2 cycle
+        int head, dir;
+        if (ph < 1.0f) { head = static_cast<int>(ph * fLeds);              dir = +1; }
+        else           { head = static_cast<int>((2.0f - ph) * fLeds);    dir = -1; }
+        const int behind = (dir > 0) ? (head - gid) : (gid - head);  // clip at ends, no wrap
+        brightness = cometBrightness(behind, nLeds, cometW);
         col = sc.color1;
         break;
     }
 
     // ── COLOUR_WASH ───────────────────────────────────────────────────────
-    // Sinusoidal cross-fade between color1 and color2, staggered across bars.
+    // Travelling colour wave between color1 and color2 along the full line.
     case MotionType::COLOUR_WASH:
     {
-        const float barOff = static_cast<float>(barIdx) / static_cast<float>(nBars);
-        const float mix    = (1.0f + std::sin(kTwoPi * (ft + barOff))) * 0.5f;
+        const float mix = (1.0f + std::sin(kTwoPi * (fts + gf / fLeds))) * 0.5f;
         col = { sc.color1.r + mix * (sc.color2.r - sc.color1.r),
                 sc.color1.g + mix * (sc.color2.g - sc.color1.g),
                 sc.color1.b + mix * (sc.color2.b - sc.color1.b) };
@@ -175,42 +175,37 @@ void SceneEngine::renderPixel(const Scene& sc, double t,
         break;
     }
 
-    // ── PULSE_RING ────────────────────────────────────────────────────────
-    // Sinusoidal pulse in the ring direction; vertical full on.
+    // ── PULSE_RING → line pulse ─────────────────────────────────────────────
+    // Travelling brightness wave along the full line.
     case MotionType::PULSE_RING:
     {
-        const float barOff = static_cast<float>(barIdx) / static_cast<float>(nBars);
-        brightness = (1.0f + std::sin(kTwoPi * (ft * static_cast<float>(sc.direction) + barOff))) * 0.5f;
+        brightness = (1.0f + std::sin(kTwoPi * (fts + gf / fLeds))) * 0.5f;
         col = sc.color1;
         break;
     }
 
-    // ── RAINBOW_RING ──────────────────────────────────────────────────────
-    // Hue progresses around the ring over time; full brightness.
+    // ── RAINBOW_RING → line rainbow ─────────────────────────────────────────
+    // Hue progresses along the full line and scrolls over time.
     case MotionType::RAINBOW_RING:
     {
-        const float hueBase   = std::fmod(ft, 1.0f);
-        const float hueOffset = static_cast<float>(barIdx) / static_cast<float>(nBars);
-        const float vertOff   = static_cast<float>(pixel - 1) / static_cast<float>(nPix) * 0.1f;
-        const float hue = std::fmod(hueBase * static_cast<float>(sc.direction) + hueOffset + vertOff + 1.0f, 1.0f);
+        const float hue = std::fmod(fts + gf / fLeds + 1.0f, 1.0f);
         col = hsvToRgb(hue, 1.0f, 1.0f);
         brightness = 1.0f;
         break;
     }
 
-    // ── DIAGONAL_WIPE ─────────────────────────────────────────────────────
-    // Vertical fill staggered per bar; crossfades between color1 and color2.
+    // ── DIAGONAL_WIPE → line wipe ───────────────────────────────────────────
+    // Fill sweeps along the full line; colour crossfades color1→color2 with fill.
     case MotionType::DIAGONAL_WIPE:
     {
-        const float barOff   = static_cast<float>(barIdx) / static_cast<float>(nBars) * 0.5f;
-        const float phase    = std::fmod(ft + barOff, 1.0f);
-        const int   fill     = static_cast<int>(phase * static_cast<float>(nPix));
-        const float mix      = (fill > 0) ? static_cast<float>(fill) / static_cast<float>(nPix) : 0.0f;
+        const float phase = std::fmod(ft, 1.0f);
+        const int   fill  = static_cast<int>(phase * fLeds);
+        const float mix   = (fill > 0) ? static_cast<float>(fill) / fLeds : 0.0f;
         col = { sc.color1.r + mix * (sc.color2.r - sc.color1.r),
                 sc.color1.g + mix * (sc.color2.g - sc.color1.g),
                 sc.color1.b + mix * (sc.color2.b - sc.color1.b) };
-        brightness = sc.direction > 0 ? (pixel <= fill ? 1.0f : 0.0f)
-                                       : (pixel >= (nPix - fill) ? 1.0f : 0.0f);
+        brightness = sc.direction > 0 ? (gid <= fill ? 1.0f : 0.0f)
+                                       : (gid >= (nLeds - fill) ? 1.0f : 0.0f);
         break;
     }
     }

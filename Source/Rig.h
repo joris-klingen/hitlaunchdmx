@@ -42,17 +42,17 @@ inline constexpr std::array<BarFixture, kNumBars> kBars {{
     { 163, kPixelsPerBar },
 }};
 
-// Ring angles for the visualiser (radians, clockwise from top).
-// Bars are arranged in a C-arc, open end to the left:
-//   bar 0 → 12 o'clock (top of C)
-//   bar 1 →  2 o'clock (60°)
-//   bar 2 →  4 o'clock (120°)
-//   bar 3 →  6 o'clock (bottom of C)
-inline constexpr float kBarAngle[kNumBars] = {
-    0.0f,                                // 12 o'clock  (top)
-    1.04719755f,                         //  2 o'clock  (π/3 = 60°)
-    2.09439510f,                         //  4 o'clock  (2π/3 = 120°)
-    3.14159265f,                         //  6 o'clock  (bottom)
-};
+// The 4 bars are stacked into ONE long vertical line of 72 LEDs.
+// Global index (gid) runs 0..71 bottom→top:
+//   bar 0 pixel 1 = gid 0   (very bottom)
+//   bar 3 pixel 18 = gid 71 (very top)
+// Motion recipes treat the rig as this single 72-pixel line.
+inline constexpr int kNumLeds = kNumBars * kPixelsPerBar;  // 72
+
+// Global 0-based LED index for (barIdx 0..3, pixel 1..18), bottom→top.
+inline constexpr int gidFor(int barIdx, int pixel) noexcept
+{
+    return barIdx * kPixelsPerBar + (pixel - 1);
+}
 
 }  // namespace hitlaunchdmx

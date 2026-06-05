@@ -69,22 +69,24 @@ void DmxVisualizer::rebuildCache()
     juce::Graphics g(cachedImage);
     g.fillAll(juce::Colour(0xff141414));
 
-    // 4 vertical bars side by side, evenly spaced, centred in the component.
-    const int labelH  = 14;
-    const int marginY = 16;
-    const int gap     = 28;                          // space between bars
-    const int barH    = h - 2 * marginY - labelH;    // tallest bar that fits
-    const int cellH   = juce::jmax(4, barH / kPixelsPerBar);
-    const int realBarH = cellH * kPixelsPerBar;
-    const int barW    = juce::jlimit(24, 80, (w - (kNumBars + 1) * gap) / kNumBars);
-
-    const int totalW  = kNumBars * barW + (kNumBars - 1) * gap;
-    const int originX = (w - totalW) / 2;
-    const int originY = (h - realBarH - labelH) / 2;
+    // ONE long vertical line of 72 LEDs: 4 bars stacked, bar 1 at the bottom,
+    // bar 4 at the top, with a small gap between bar groups so the 4-bar
+    // structure is still visible.
+    const int marginY  = 16;
+    const int barGap   = 8;                                   // gap between bar groups
+    const int totalGap = (kNumBars - 1) * barGap;
+    const int avail    = h - 2 * marginY - totalGap;
+    const int cellH    = juce::jmax(3, avail / kNumLeds);     // per-LED height
+    const int groupH   = cellH * kPixelsPerBar;               // 18 LEDs tall
+    const int stackH   = kNumBars * groupH + totalGap;
+    const int barW     = juce::jlimit(30, 120, w / 3);
+    const int x0       = (w - barW) / 2;
+    const int topY     = (h - stackH) / 2;                    // top of the whole stack
 
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
     {
-        const int x0 = originX + barIdx * (barW + gap);
+        // barIdx 0 sits at the BOTTOM of the stack, barIdx 3 at the top.
+        const int groupTop = topY + (kNumBars - 1 - barIdx) * (groupH + barGap);
 
         const auto& bar = kBars[barIdx];
         for (int pixel = 1; pixel <= bar.pixels; ++pixel)
@@ -94,16 +96,17 @@ void DmxVisualizer::rebuildCache()
             const uint8_t gv = frame.get(ch[1]);
             const uint8_t b  = frame.get(ch[2]);
 
-            const int row = bar.pixels - pixel;  // pixel 1 at bottom
+            const int row = bar.pixels - pixel;  // pixel 1 at the bottom of its group
             g.setColour(juce::Colour(r, gv, b));
-            g.fillRect(x0, originY + row * cellH, barW, cellH - 1);
+            g.fillRect(x0, groupTop + row * cellH, barW, cellH - 1);
         }
 
-        // Bar label
-        g.setColour(juce::Colour(0xff888888));
+        // Bar number to the left of each group
+        g.setColour(juce::Colour(0xff777777));
         g.setFont(juce::FontOptions(10.0f));
-        g.drawText("bar " + juce::String(barIdx + 1),
-                   x0, originY + realBarH + 2, barW, 12, juce::Justification::centred);
+        g.drawText(juce::String(barIdx + 1),
+                   x0 - 22, groupTop + groupH / 2 - 7, 16, 14,
+                   juce::Justification::centredRight);
     }
 }
 
