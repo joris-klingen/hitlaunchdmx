@@ -361,11 +361,22 @@ void SceneEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMe
         entry.velocity = static_cast<juce::uint8>(msg.getVelocity());
         midiLog.push(entry);
 
-        const int idx = noteToSceneIndex(msg.getNoteNumber());
-        if (idx >= 0 && idx < 64)
+        const int note = msg.getNoteNumber();
+        const int idx  = noteToSceneIndex(note);   // in-page 0..63
+        if (idx >= 0)
         {
-            activeScene.store(idx);
+            // Grid pad on the currently-viewed page selects that scene.
+            activeScene.store(viewPage.load() * kScenesPerPage + idx);
             refreshLaunchpadLEDs();
+        }
+        else
+        {
+            const int page = noteToPageIndex(note);  // top-row page button
+            if (page >= 0)
+            {
+                viewPage.store(page);
+                refreshLaunchpadLEDs();
+            }
         }
     }
     else if (msg.isNoteOff())
@@ -391,11 +402,20 @@ void SceneEngine::sendLaunchpadProgrammerMode()
     midiOut->sendMessageNow(juce::MidiMessage(sysex, sizeof(sysex)));
 }
 
-void SceneEngine::setActiveScene(int idx) noexcept
+void SceneEngine::setActiveScene(int flat) noexcept
 {
-    if (idx >= 0 && idx < 64)
+    if (flat >= 0 && flat < kTotalScenes)
     {
-        activeScene.store(idx);
+        activeScene.store(flat);
+        refreshLaunchpadLEDs();
+    }
+}
+
+void SceneEngine::setViewPage(int page) noexcept
+{
+    if (page >= 0 && page < kNumPages)
+    {
+        viewPage.store(page);
         refreshLaunchpadLEDs();
     }
 }
@@ -404,21 +424,25 @@ void SceneEngine::refreshLaunchpadLEDs()
 {
     if (!midiOut) return;
     const int active = activeScene.load();
+    const int page   = viewPage.load();
 
     // Light each pad with the scene's EXACT colour via the Launchpad Mini MK3
-    // RGB lighting SysEx (programmer mode). One message carries all 64 pads:
+    // RGB lighting SysEx (programmer mode). One message carries all pads:
     //   F0 00 20 29 02 0D 03  [spec...]  F7
     //   RGB spec = 03 <note> <r 0-127> <g 0-127> <b 0-127>
-    // Active pad is full brightness; the rest are dimmed so the active one pops.
+    // The grid shows the currently-viewed page; the active pad (if on this
+    // page) is full brightness, the rest dimmed. The top-row page buttons show
+    // which page is in view (active = white, others = dim white).
     std::vector<uint8_t> msg = { 0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03 };
 
-    for (int i = 0; i < 64; ++i)
+    for (int i = 0; i < kScenesPerPage; ++i)
     {
-        const auto& sc   = kScenes[static_cast<size_t>(i)];
+        const int   flat = page * kScenesPerPage + i;
+        const auto& sc   = kScenes[static_cast<size_t>(flat)];
         const int   row  = i / 8 + 1;  // 1-based
         const int   col  = i % 8 + 1;
         const int   note = row * 10 + col;
-        const float gain = (i == active) ? 1.0f : 0.22f;
+        const float gain = (flat == active) ? 1.0f : 0.22f;
 
         const auto to7 = [gain](float c) -> uint8_t {
             return static_cast<uint8_t>(juce::jlimit(0, 127, static_cast<int>(c * gain * 127.0f + 0.5f)));
@@ -429,6 +453,17 @@ void SceneEngine::refreshLaunchpadLEDs()
         msg.push_back(to7(sc.color1.r));
         msg.push_back(to7(sc.color1.g));
         msg.push_back(to7(sc.color1.b));
+    }
+
+    // Page-selector buttons (top row).
+    for (int p = 0; p < kNumPages; ++p)
+    {
+        const uint8_t lvl = (p == page) ? 127 : 12;  // white: bright = current
+        msg.push_back(0x03);
+        msg.push_back(static_cast<uint8_t>(pageButtonNote(p)));
+        msg.push_back(lvl);
+        msg.push_back(lvl);
+        msg.push_back(lvl);
     }
 
     msg.push_back(0xF7);

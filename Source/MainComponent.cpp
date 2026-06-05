@@ -84,7 +84,7 @@ int VirtualLaunchpad::cellForPoint(juce::Point<int> pt) const
     const float padH = static_cast<float>(getHeight()) / 8.0f;
     const int vCol = juce::jlimit(0, 7, static_cast<int>(pt.x / padW));
     const int vRow = juce::jlimit(0, 7, static_cast<int>(pt.y / padH));
-    return sceneForCell(vRow, vCol);
+    return flatForCell(vRow, vCol);   // FLAT index
 }
 
 void VirtualLaunchpad::paint(juce::Graphics& g)
@@ -95,7 +95,7 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
     {
         for (int vCol = 0; vCol < 8; ++vCol)
         {
-            const int sceneIdx = sceneForCell(vRow, vCol);
+            const int sceneIdx = flatForCell(vRow, vCol);   // flat
             const auto& sc     = kScenes[static_cast<size_t>(sceneIdx)];
             const auto  bounds = cellBoundsF(vRow, vCol);
             const bool  active  = (sceneIdx == activeScene);
@@ -137,8 +137,8 @@ void VirtualLaunchpad::paint(juce::Graphics& g)
 
 void VirtualLaunchpad::mouseDown(const juce::MouseEvent& e)
 {
-    const int idx = cellForPoint(e.getPosition());
-    if (idx >= 0 && idx < 64)
+    const int idx = cellForPoint(e.getPosition());   // flat
+    if (idx >= 0 && idx < kTotalScenes)
     {
         activeScene = idx;
         engine.setActiveScene(idx);
@@ -212,7 +212,22 @@ MainComponent::MainComponent()
     // ── centre visualiser ─────────────────────────────────────────────────
     addAndMakeVisible(visualizer);
 
-    // ── right: virtual launchpad ──────────────────────────────────────────
+    // ── right: page tabs + virtual launchpad ──────────────────────────────
+    for (int p = 0; p < kNumPages; ++p)
+    {
+        auto& tab = pageTabs[static_cast<size_t>(p)];
+        tab.setButtonText("Page " + juce::String(p + 1));
+        tab.setClickingTogglesState(true);
+        tab.setRadioGroupId(1001);
+        tab.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff3a6ea5));
+        tab.setToggleState(p == 0, juce::dontSendNotification);
+        tab.onClick = [this, p] {
+            engine.setViewPage(p);
+            virtualLaunchpad.setViewPage(p);
+        };
+        addAndMakeVisible(tab);
+    }
+
     addAndMakeVisible(virtualLaunchpad);
 
     // ── four performance pots (left panel bottom) ─────────────────────────
@@ -336,9 +351,13 @@ void MainComponent::disconnectDmx()
 void MainComponent::timerCallback()
 {
     const int activeIdx = engine.getActiveScene();
+    const int viewPg    = engine.getViewPage();
 
-    // Keep virtual launchpad in sync with MIDI-triggered changes
+    // Keep virtual launchpad + page tabs in sync with hardware-driven changes
     virtualLaunchpad.setActiveScene(activeIdx);
+    virtualLaunchpad.setViewPage(viewPg);
+    if (! pageTabs[static_cast<size_t>(viewPg)].getToggleState())
+        pageTabs[static_cast<size_t>(viewPg)].setToggleState(true, juce::dontSendNotification);
 
     // Drain MIDI log (capped at 20 lines)
     juce::String newLines;
@@ -430,7 +449,17 @@ void MainComponent::resized()
     // ── centre ────────────────────────────────────────────────────────────
     visualizer.setBounds(centrePanel.reduced(4));
 
-    // ── right: launchpad grid ─────────────────────────────────────────────
+    // ── right: page tabs + launchpad grid ─────────────────────────────────
+    {
+        auto tabRow = rightPanel.removeFromTop(26);
+        const int tabW = tabRow.getWidth() / kNumPages;
+        for (int p = 0; p < kNumPages; ++p)
+        {
+            auto cell = (p == kNumPages - 1) ? tabRow : tabRow.removeFromLeft(tabW);
+            pageTabs[static_cast<size_t>(p)].setBounds(cell.reduced(2, 0));
+        }
+        rightPanel.removeFromTop(4);
+    }
     virtualLaunchpad.setBounds(rightPanel);
 }
 

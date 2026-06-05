@@ -70,9 +70,15 @@ public:
     juce::String activeMidiInputName()  const { return openInputName; }
     juce::String activeMidiOutputName() const { return openOutputName; }
 
-    int  getActiveScene()           const noexcept { return activeScene.load(); }
-    void setActiveScene(int idx)          noexcept;   // callable from GUI thread
+    int  getActiveScene()           const noexcept { return activeScene.load(); }  // flat 0..kTotalScenes-1
+    void setActiveScene(int flat)         noexcept;   // callable from GUI thread
     void setCrossfadeSec(float s)         noexcept  { crossfadeSec.store(s); }
+
+    // Which page (0..kNumPages-1) the grid/LEDs currently show. Switching the
+    // view page does NOT change the scene that is playing — it only re-targets
+    // which 64 pads map to which scenes and what the LEDs display.
+    int  getViewPage()              const noexcept { return viewPage.load(); }
+    void setViewPage(int page)            noexcept;
 
     // Live performance controls (all 1.0 = neutral / default).
     void setGlobalDim(float d)            noexcept  { globalDim.store(d); }   // 0..1 master brightness
@@ -103,7 +109,8 @@ private:
     DmxFrame&     liveFrameOut;
     MidiLog&      midiLog;
 
-    std::atomic<int>   activeScene  { 0 };
+    std::atomic<int>   activeScene  { 0 };   // flat index into kScenes (0..kTotalScenes-1)
+    std::atomic<int>   viewPage     { 0 };   // page shown on grid + LEDs
     std::atomic<float> crossfadeSec { 2.0f };
     std::atomic<float> globalDim    { 1.0f };
     std::atomic<float> speedScale   { 1.0f };
