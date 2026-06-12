@@ -1,6 +1,14 @@
 # HitLaunchDmx — TODO
 
-## Requested next (user-prioritised, 2026-06-05)
+## Requested next (user-prioritised, 2026-06-12)
+
+0. **Re-establish a link with the recipes developed in hitnotedmx.** The
+   scene/effect code here (`Scene.h`, `Rig.h`, `SceneEngine.cpp`) forked from
+   an earlier state; `../hitnotedmx/Source/Recipes.{h,cpp}` is the evolving
+   reference. Share or re-port those recipes instead of maintaining a
+   parallel fork — see CLAUDE.md for the options.
+
+## Requested earlier (user-prioritised, 2026-06-05)
 
 1. **Master parameters as Launchpad controls.** Map the four pots (DIM, TAIL,
    SPEED, XFADE) to physical Launchpad controls so they can be ridden without
