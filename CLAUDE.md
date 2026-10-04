@@ -36,3 +36,13 @@ ctest --test-dir build_dev -C Release
 
 (The older `build/`, `build_native/`, `build_universal/` dirs were configured
 at the pre-reorg path `code/hitlaunchdmx` and won't reconfigure in place.)
+
+## Releasing to the show machine
+
+The show machine (M1 — arm64 only, no Intel/universal build) installs from the
+Dropbox folder
+`~/Library/CloudStorage/Dropbox/Music/Hitmix/9_tech/hitlaunch_installer`
+(`HitLaunchDmx_installer/` = `HitLaunchDmx.app` + `install.command`, plus a
+zipped copy `HitLaunchDmx_installer.zip`). **Refresh it only on request**:
+build + `ctest`, `ditto` the app and [installer/install.command](installer/install.command)
+into the folder, then re-zip with `ditto -c -k --keepParent`.

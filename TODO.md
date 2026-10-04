@@ -7,7 +7,7 @@
       numbers in `Source/Controls.h`, and that the LED SysEx (template id 8)
       lights knobs + buttons. The MIDI log in the left panel shows raw input.
 - [ ] ENTTEC smoke test on the rig (same patch as hitnotedmx: spots 1–12, bars from 13).
-- [ ] Build + test the universal binary on the Intel/Monterey show machine.
+- [ ] Test the arm64 build on the show machine (M1).
 
 ## Feel / tuning (after playing it)
 - [ ] Knob ranges/curves: BPM range 60–180, Release default, Col fade.

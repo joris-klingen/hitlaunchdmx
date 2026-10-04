@@ -4,8 +4,7 @@
 # strips the quarantine flag so Gatekeeper doesn't block the ad-hoc-signed
 # binary.
 #
-# The bundle is a universal binary (arm64 + x86_64, macOS 12.0+), so it runs
-# natively on both Apple Silicon and the Intel Monterey rig machine.
+# The bundle is an Apple Silicon (arm64) build, macOS 12.0+.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

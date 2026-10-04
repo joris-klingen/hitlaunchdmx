@@ -123,7 +123,7 @@ cmake --build build_dev --config Release -j8
 ctest --test-dir build_dev -C Release
 ```
 
-Universal (Intel show machine + Apple Silicon):
+Release builds are Apple Silicon (arm64) only; a universal build is possible if ever needed:
 `cmake -S . -B build_universal -G Xcode "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"`.
 `installer/install.command` copies the app to /Applications and strips the
 quarantine flag.
