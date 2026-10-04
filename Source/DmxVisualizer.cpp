@@ -6,14 +6,6 @@
 namespace hitlaunchdmx
 {
 
-namespace
-{
-juce::uint8 toByte(float v) noexcept
-{
-    return static_cast<juce::uint8>(juce::jlimit(0, 255, static_cast<int>(v * 255.0f + 0.5f)));
-}
-}
-
 DmxVisualizer::DmxVisualizer(const DmxFrame& frameRef, int /*activeSceneRef*/)
     : frame(frameRef)
 {
@@ -69,26 +61,36 @@ void DmxVisualizer::rebuildCache()
     juce::Graphics g(cachedImage);
     g.fillAll(juce::Colour(0xff141414));
 
-    // ONE long vertical line of 72 LEDs: 4 bars stacked, bar 1 at the bottom,
-    // bar 4 at the top, with a small gap between bar groups so the 4-bar
-    // structure is still visible.
-    const int marginY  = 16;
-    const int barGap   = 8;                                   // gap between bar groups
-    const int totalGap = (kNumBars - 1) * barGap;
-    const int avail    = h - 2 * marginY - totalGap;
-    const int cellH    = juce::jmax(3, avail / kNumLeds);     // per-LED height
-    const int groupH   = cellH * kPixelsPerBar;               // 18 LEDs tall
-    const int stackH   = kNumBars * groupH + totalGap;
-    const int barW     = juce::jlimit(30, 120, w / 3);
-    const int x0       = (w - barW) / 2;
-    const int topY     = (h - stackH) / 2;                    // top of the whole stack
+    // Grid style (matches hitnotedmx): two RGBW spots flank a grid of vertical
+    // bars. The bars are drawn as kNumBars columns side by side, each a stack
+    // of kPixelsPerBar cells with pixel 1 at the BOTTOM (bottom-up rig). The
+    // spots are reserved-but-dark in this app, so they read as faint outlines.
+    const int marginX = 14;
+    const int marginY = 16;
+    const int spotDia = juce::jlimit(14, 40, w / 14);   // spot circle diameter
+    const int spotGap = 12;                              // gap spot ↔ grid
 
+    // Horizontal band available to the bar grid (spots sit outside it).
+    const int gridLeft  = marginX + spotDia + spotGap;
+    const int gridRight = w - marginX - spotDia - spotGap;
+    const int gridW     = juce::jmax(kNumBars * 6, gridRight - gridLeft);
+
+    const int barGap = juce::jmax(4, gridW / (kNumBars * 6));   // gap between columns
+    const int barW   = juce::jmax(6, (gridW - (kNumBars - 1) * barGap) / kNumBars);
+    const int gridUsedW = kNumBars * barW + (kNumBars - 1) * barGap;
+    const int gridX0    = gridLeft + (gridW - gridUsedW) / 2;
+
+    const int avail = h - 2 * marginY;
+    const int cellH = juce::jmax(3, avail / kPixelsPerBar);
+    const int colH  = cellH * kPixelsPerBar;
+    const int topY  = (h - colH) / 2;
+
+    // --- bar grid ---------------------------------------------------------
     for (int barIdx = 0; barIdx < kNumBars; ++barIdx)
     {
-        // barIdx 0 sits at the BOTTOM of the stack, barIdx 3 at the top.
-        const int groupTop = topY + (kNumBars - 1 - barIdx) * (groupH + barGap);
-
+        const int colX  = gridX0 + barIdx * (barW + barGap);
         const auto& bar = kBars[barIdx];
+
         for (int pixel = 1; pixel <= bar.pixels; ++pixel)
         {
             const auto ch  = bar.channelsFor(pixel);
@@ -96,18 +98,42 @@ void DmxVisualizer::rebuildCache()
             const uint8_t gv = frame.get(ch[1]);
             const uint8_t b  = frame.get(ch[2]);
 
-            const int row = bar.pixels - pixel;  // pixel 1 at the bottom of its group
+            const int row = bar.pixels - pixel;  // pixel 1 at the bottom
             g.setColour(juce::Colour(r, gv, b));
-            g.fillRect(x0, groupTop + row * cellH, barW, cellH - 1);
+            g.fillRect(colX, topY + row * cellH, barW, cellH - 1);
         }
 
-        // Bar number to the left of each group
+        // Bar number under each column.
         g.setColour(juce::Colour(0xff777777));
         g.setFont(juce::FontOptions(10.0f));
         g.drawText(juce::String(barIdx + 1),
-                   x0 - 22, groupTop + groupH / 2 - 7, 16, 14,
-                   juce::Justification::centredRight);
+                   colX, topY + colH + 2, barW, 12,
+                   juce::Justification::centredTop);
     }
+
+    // --- two RGBW spots flanking the grid ---------------------------------
+    const int spotY = (h - spotDia) / 2;
+    const auto drawSpot = [&](int spotIdx, int cx)
+    {
+        const auto& sp = kSpots[spotIdx];
+        // Composite the RGBW spot to an on-screen colour (W adds warm white).
+        const int r = frame.get(sp.red());
+        const int gv= frame.get(sp.green());
+        const int b = frame.get(sp.blue());
+        const int wv= frame.get(sp.white());
+        const juce::uint8 rr = (juce::uint8) juce::jmin(255, r + (wv * 255) / 255);
+        const juce::uint8 gg = (juce::uint8) juce::jmin(255, gv + (wv * 244) / 255);
+        const juce::uint8 bb = (juce::uint8) juce::jmin(255, b + (wv * 224) / 255);
+
+        const auto bounds = juce::Rectangle<float>((float) cx, (float) spotY,
+                                                   (float) spotDia, (float) spotDia);
+        g.setColour(juce::Colour(rr, gg, bb));
+        g.fillEllipse(bounds);
+        g.setColour(juce::Colour(0xff444444));   // faint ring marks a reserved spot
+        g.drawEllipse(bounds, 1.5f);
+    };
+    drawSpot(0, marginX);                       // spot_l, far left
+    drawSpot(1, w - marginX - spotDia);         // spot_r, far right
 }
 
 }  // namespace hitlaunchdmx

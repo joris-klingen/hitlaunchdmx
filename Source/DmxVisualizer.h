@@ -9,9 +9,11 @@
 namespace hitlaunchdmx
 {
 
-// On-screen preview: 4 vertical bars arranged at 12/3/6/9 o'clock around
-// a circle. Each bar is drawn as a column of 18 coloured cells, pixel 1 at
-// the bottom. Pre-rendered into a cached juce::Image; paint() is one blit.
+// On-screen preview (grid style, matching hitnotedmx): two RGBW spots flank a
+// grid of kNumBars vertical bars, each drawn as a column of kPixelsPerBar
+// coloured cells with pixel 1 at the bottom. The spots are reserved-but-dark
+// in this app (see Rig.h) so they read as faint outlines. Pre-rendered into a
+// cached juce::Image; paint() is one blit.
 class DmxVisualizer : public juce::Component
 {
 public:

@@ -1,7 +1,11 @@
 #include "EnttecProDmx.h"
 
+#if defined(__APPLE__)
+
 #include <cerrno>
+#include <cmath>
 #include <cstring>
+
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -16,6 +20,7 @@
 namespace hitlaunchdmx
 {
 
+// ENTTEC USB Pro packet labels (see ENTTEC's "DMX USB Pro Widget API Specification").
 namespace
 {
     constexpr int GET_WIDGET_PARAMS       = 3;
@@ -24,11 +29,16 @@ namespace
     constexpr unsigned char MSG_START_CODE = 0x7E;
     constexpr unsigned char MSG_END_CODE   = 0xE7;
     constexpr int HEADER_LENGTH = 4;
+
+    // The widget runs on an FTDI bridge; the host-side baud is effectively
+    // ignored by the device, but a sane value must still be configured.
     constexpr speed_t kBaudRate = 57600;
 
-    bool isEnttecCalloutPath(const std::string& path)
+    // The ENTTEC DMX USB Pro enumerates its USB serial callout device as
+    // /dev/cu.usbserial-EN<serial>. We match on that prefix.
+    bool isEnttecCalloutPath (const std::string& path)
     {
-        return path.find("usbserial-EN") != std::string::npos;
+        return path.find ("usbserial-EN") != std::string::npos;
     }
 
     #pragma pack(push, 1)
@@ -42,39 +52,48 @@ namespace
     };
     #pragma pack(pop)
 
+    // Enumerate all serial callout devices (/dev/cu.*) via IOKit.
     std::vector<std::string> listSerialCalloutDevices()
     {
         std::vector<std::string> paths;
-        CFMutableDictionaryRef match = IOServiceMatching(kIOSerialBSDServiceValue);
-        if (match == nullptr) return paths;
-        CFDictionarySetValue(match, CFSTR(kIOSerialBSDTypeKey), CFSTR(kIOSerialBSDAllTypes));
+
+        CFMutableDictionaryRef match = IOServiceMatching (kIOSerialBSDServiceValue);
+        if (match == nullptr)
+            return paths;
+
+        CFDictionarySetValue (match,
+                              CFSTR (kIOSerialBSDTypeKey),
+                              CFSTR (kIOSerialBSDAllTypes));
 
         io_iterator_t iterator = IO_OBJECT_NULL;
-        if (IOServiceGetMatchingServices(kIOMasterPortDefault, match, &iterator) != KERN_SUCCESS)
+        if (IOServiceGetMatchingServices (kIOMasterPortDefault, match, &iterator) != KERN_SUCCESS)
             return paths;
 
         io_object_t service = IO_OBJECT_NULL;
-        while ((service = IOIteratorNext(iterator)) != IO_OBJECT_NULL)
+        while ((service = IOIteratorNext (iterator)) != IO_OBJECT_NULL)
         {
-            if (auto cfPath = (CFStringRef) IORegistryEntryCreateCFProperty(
-                    service, CFSTR(kIOCalloutDeviceKey), kCFAllocatorDefault, 0))
+            if (auto cfPath = (CFStringRef) IORegistryEntryCreateCFProperty (
+                    service, CFSTR (kIOCalloutDeviceKey), kCFAllocatorDefault, 0))
             {
                 char buffer[1024] = { 0 };
-                if (CFStringGetCString(cfPath, buffer, sizeof(buffer), kCFStringEncodingUTF8))
-                    paths.emplace_back(buffer);
-                CFRelease(cfPath);
+                if (CFStringGetCString (cfPath, buffer, sizeof (buffer), kCFStringEncodingUTF8))
+                    paths.emplace_back (buffer);
+
+                CFRelease (cfPath);
             }
-            IOObjectRelease(service);
+
+            IOObjectRelease (service);
         }
-        IOObjectRelease(iterator);
+
+        IOObjectRelease (iterator);
         return paths;
     }
 }
 
 EnttecProDmx::EnttecProDmx()
 {
-    dmxData.fill(0);
-    blackoutData.fill(0);
+    dmxData.fill (0);
+    blackoutData.fill (0);
     scanDevices();
 }
 
@@ -88,65 +107,101 @@ int EnttecProDmx::scanDevices()
 {
     int count = 0;
     std::string firstMatch;
+
     for (const auto& path : listSerialCalloutDevices())
     {
-        if (isEnttecCalloutPath(path))
+        if (isEnttecCalloutPath (path))
         {
-            if (firstMatch.empty()) firstMatch = path;
+            if (firstMatch.empty())
+                firstMatch = path;
             ++count;
         }
     }
+
     selectedDevicePath = firstMatch;
     numDevicesDetected = count;
     return numDevicesDetected;
 }
 
-bool EnttecProDmx::openPort(const std::string& devicePath)
+bool EnttecProDmx::openPort (const std::string& devicePath, bool recordError)
 {
-    int fd = ::open(devicePath.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    // O_NONBLOCK so the open itself never stalls waiting on modem control
+    // lines (a known FTDI-on-Apple-Silicon hang); we clear it again below so
+    // the handshake reads can honour VMIN/VTIME timeouts.
+    int fd = ::open (devicePath.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (fd < 0)
     {
-        lastError = "Could not open " + juce::String(devicePath)
-                  + " (" + juce::String(std::strerror(errno)) + ").";
+        if (recordError)
+            lastError = errno == EBUSY
+                ? "ENTTEC busy - another instance or app already has the port."
+                : "Could not open " + juce::String (devicePath)
+                  + " (" + juce::String (std::strerror (errno)) + ").";
         return false;
     }
-    if (fcntl(fd, F_SETFL, 0) == -1)
+
+    // Claim the port exclusively. macOS cu.* callout devices are NOT exclusive
+    // by default, so without this a second plugin instance (or another app)
+    // would open() the same port successfully and both would write — producing
+    // interleaved, corrupt DMX. With TIOCEXCL the first owner holds it and the
+    // next open() gets EBUSY (handled above). Released on close(). Best-effort.
+    ioctl (fd, TIOCEXCL);
+
+    if (fcntl (fd, F_SETFL, 0) == -1)   // back to blocking I/O
     {
-        lastError = "Could not configure the serial port (fcntl).";
-        ::close(fd); return false;
+        if (recordError)
+            lastError = "Could not configure the serial port (fcntl).";
+        ::close (fd);
+        return false;
     }
 
     struct termios options {};
-    if (tcgetattr(fd, &options) != 0)
+    if (tcgetattr (fd, &options) != 0)
     {
-        lastError = "tcgetattr failed on the serial port.";
-        ::close(fd); return false;
+        if (recordError)
+            lastError = "tcgetattr failed on the serial port.";
+        ::close (fd);
+        return false;
     }
 
-    options.c_cflag &= ~(tcflag_t)(PARENB | CSTOPB | CSIZE | CRTSCTS);
-    options.c_cflag |=  (tcflag_t)(CS8 | CREAD | CLOCAL);
-    options.c_lflag &= ~(tcflag_t)(ICANON | ECHO | ECHOE | ECHONL | ISIG);
-    options.c_iflag &= ~(tcflag_t)(IXON | IXOFF | IXANY);
-    options.c_iflag &= ~(tcflag_t)(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
-    options.c_oflag &= ~(tcflag_t)(OPOST | ONLCR);
+    // 8 data bits, no parity, one stop bit, no flow control, raw mode.
+    options.c_cflag &= ~(tcflag_t) (PARENB | CSTOPB | CSIZE | CRTSCTS);
+    options.c_cflag |= (tcflag_t) (CS8 | CREAD | CLOCAL);
+
+    options.c_lflag &= ~(tcflag_t) (ICANON | ECHO | ECHOE | ECHONL | ISIG);
+    options.c_iflag &= ~(tcflag_t) (IXON | IXOFF | IXANY);
+    options.c_iflag &= ~(tcflag_t) (IGNBRK | BRKINT | PARMRK | ISTRIP
+                                    | INLCR | IGNCR | ICRNL);
+    options.c_oflag &= ~(tcflag_t) (OPOST | ONLCR);
+
+    // Block up to 1s per read() returning whatever bytes have arrived. Only
+    // the connect handshake reads; the DMX send loop never reads, so a patient
+    // timeout here just makes the widget-parameter query more reliable.
     options.c_cc[VTIME] = 10;
     options.c_cc[VMIN]  = 0;
 
-    if (tcsetattr(fd, TCSANOW, &options) != 0)
+    if (tcsetattr (fd, TCSANOW, &options) != 0)
     {
-        lastError = "tcsetattr failed on the serial port.";
-        ::close(fd); return false;
+        if (recordError)
+            lastError = "tcsetattr failed on the serial port.";
+        ::close (fd);
+        return false;
     }
 
+    // Set an arbitrary baud rate via the macOS-specific IOSSIOSPEED ioctl.
     speed_t baud = kBaudRate;
-    if (ioctl(fd, IOSSIOSPEED, &baud) == -1)
+    if (ioctl (fd, IOSSIOSPEED, &baud) == -1)
     {
-        lastError = "Could not set the serial baud rate.";
-        ::close(fd); return false;
+        if (recordError)
+            lastError = "Could not set the serial baud rate.";
+        ::close (fd);
+        return false;
     }
 
+    // Drop the FTDI latency timer to its minimum (1 ms). The default 16 ms
+    // buffering is the knob behind much of the FTDI-on-Apple-Silicon lag and
+    // the long drains on close. Best-effort: ignore if the driver rejects it.
     unsigned long latency = 1;
-    ioctl(fd, IOSSDATALAT, &latency);
+    ioctl (fd, IOSSDATALAT, &latency);
 
     serialFd = fd;
     return true;
@@ -154,28 +209,47 @@ bool EnttecProDmx::openPort(const std::string& devicePath)
 
 bool EnttecProDmx::connect()
 {
-    if (connected.load()) return true;
+    if (connected.load())
+        return true;
 
-    if (selectedDevicePath.empty()) scanDevices();
+    // A session is already armed: the timer thread owns the port and is
+    // retrying on its own. Bail rather than open a second fd concurrently —
+    // clicking Connect during an auto-reconnect must not race the timer.
+    if (shouldRun.load())
+        return false;
+
+    if (selectedDevicePath.empty())
+        scanDevices();
+
     if (selectedDevicePath.empty())
     {
         lastError = "No ENTTEC DMX USB Pro serial port found.";
         return false;
     }
-    if (!openPort(selectedDevicePath)) return false;
 
+    if (! openPort (selectedDevicePath))
+        return false;
+
+    // Query the widget parameters (firmware / refresh rate) for the status
+    // panel. This is BEST-EFFORT: the widget does not need to answer for us to
+    // drive DMX (the Send-DMX message is one-way), and some units are slow or
+    // quiet on the first query right after the port opens. So we try a few
+    // times but never fail the connection just because the reply didn't land.
     firmwareMajor = firmwareMinor = refreshRate = 0;
     bool gotParams = false;
-    for (int attempt = 0; attempt < 3 && !gotParams; ++attempt)
+
+    for (int attempt = 0; attempt < 3 && ! gotParams; ++attempt)
     {
-        tcflush(serialFd, TCIFLUSH);
+        tcflush (serialFd, TCIFLUSH);   // drop any stale RX, keep our TX
+
         int size = 0;
-        if (sendPacket(GET_WIDGET_PARAMS, reinterpret_cast<unsigned char*>(&size), 2) <= 0)
+        if (sendPacket (GET_WIDGET_PARAMS, reinterpret_cast<unsigned char*> (&size), 2) <= 0)
             continue;
+
         DmxUsbProParams params {};
-        if (receivePacket(GET_WIDGET_PARAMS_REPLY,
-                          reinterpret_cast<unsigned char*>(&params),
-                          sizeof(params)) > 0)
+        if (receivePacket (GET_WIDGET_PARAMS_REPLY,
+                           reinterpret_cast<unsigned char*> (&params),
+                           sizeof (params)) > 0)
         {
             firmwareMajor = params.FirmwareMSB;
             firmwareMinor = params.FirmwareLSB;
@@ -184,30 +258,52 @@ bool EnttecProDmx::connect()
         }
     }
 
-    connected.store(true);
+    // The handshake reads relied on blocking I/O (VMIN/VTIME). The send loop
+    // never reads and must never stall the timer thread, so switch to
+    // non-blocking writes now: a wedged device drops frames (EAGAIN) instead
+    // of freezing output on the last frame.
+    setNonBlocking();
+
+    connected.store (true);
+    shouldRun.store (true);   // arm the auto-reconnect loop for the session
     lastError = {};
     txFrame = 0;
-    startTimer(1000 / kSendRateHz);
+    reconnectFramesLeft = 0;
+    startTimer (1000 / kSendRateHz);   // ms period → kSendRateHz frames/sec
     return true;
 }
 
 void EnttecProDmx::disconnect()
 {
+    shouldRun.store (false);   // user intent: stop — don't auto-reconnect
     stopTimer();
     closePort();
-    connected.store(false);
+    connected.store (false);
     scanDevices();
+}
+
+bool EnttecProDmx::setNonBlocking()
+{
+    if (serialFd < 0)
+        return false;
+    return fcntl (serialFd, F_SETFL, O_NONBLOCK) != -1;
 }
 
 void EnttecProDmx::closePort()
 {
     if (serialFd >= 0)
     {
-        tcflush(serialFd, TCIOFLUSH);
-        fcntl(serialFd, F_SETFL, O_NONBLOCK);
-        ::close(serialFd);
+        // Discard any queued I/O and switch to non-blocking *before* close().
+        // On Apple Silicon, close() on an FTDI VCP port drains pending output
+        // through the kernel tty layer, which can stall on the USB pipe and
+        // hang the calling thread (i.e. freeze the host on quit). With nothing
+        // left to drain, close() returns immediately.
+        tcflush (serialFd, TCIOFLUSH);
+        fcntl (serialFd, F_SETFL, O_NONBLOCK);
+        ::close (serialFd);
         serialFd = -1;
     }
+    txLen = txSent = 0;   // never resume a partial packet onto a new connection
 }
 
 juce::String EnttecProDmx::getStatusText() const
@@ -216,110 +312,290 @@ juce::String EnttecProDmx::getStatusText() const
     {
         if (firmwareMajor == 0 && firmwareMinor == 0 && refreshRate == 0)
             return "Connected (widget parameters unavailable).";
+
         return "Connected. Firmware "
-             + juce::String(firmwareMajor) + "." + juce::String(firmwareMinor)
-             + "\nRefresh rate: " + juce::String(refreshRate);
+             + juce::String (firmwareMajor) + "." + juce::String (firmwareMinor)
+             + "\nRefresh rate: " + juce::String (refreshRate);
     }
-    if (!lastError.isEmpty()) return lastError;
-    if (numDevicesDetected == 0) return "No ENTTEC DMX USB Pro found. Plug in and retry.";
-    if (numDevicesDetected == 1) return "Found an ENTTEC DMX USB Pro. Click Connect to open it.";
-    return "Found " + juce::String(numDevicesDetected) + " ENTTEC devices. Leave only one connected.";
+
+    // Link dropped mid-session: the timer thread is retrying ~1×/s. shouldRun
+    // is the user's "I want output" intent, so this only shows after a real
+    // connect, not on an idle plugin.
+    if (shouldRun.load())
+        return "DMX link lost - reconnecting...";
+
+    if (! lastError.isEmpty())
+        return lastError;
+
+    if (numDevicesDetected == 0)
+        return "No ENTTEC DMX USB Pro found. Plug one in and retry.";
+    if (numDevicesDetected == 1)
+        return "Found an ENTTEC DMX USB Pro. Click \"Connect USB\" to open it.";
+    return "Found " + juce::String (numDevicesDetected)
+         + " ENTTEC devices. Please leave only one connected.";
 }
 
-void EnttecProDmx::setChannel(int channel, juce::uint8 value)
+void EnttecProDmx::setChannel (int channel, juce::uint8 value)
 {
-    if (channel < 1 || channel > kDmxUniverseSize) return;
-    const juce::ScopedLock lock(dataLock);
+    if (channel < 1 || channel > kDmxUniverseSize)
+        return;
+    const juce::ScopedLock lock (dataLock);
     dmxData[(size_t) channel] = value;
 }
 
 void EnttecProDmx::hiResTimerCallback()
 {
-    if (!connected.load()) return;
-    if (!sendDmxFrame()) { closePort(); connected.store(false); }
+    if (! shouldRun.load())
+        return;   // user disconnected; a tick may still be in flight
+
+    if (! connected.load())
+    {
+        attemptReconnect();
+        return;
+    }
+
+    // Only a HARD error (device gone) drops the link and arms a reconnect. A
+    // would-block (EAGAIN, return 0) just drops this one frame and tries again
+    // next tick — the fixtures hold their last values, so a brief stall is
+    // invisible rather than a blackout, and a wiggled cable no longer latches
+    // output off until someone clicks Connect.
+    if (sendDmxFrame() < 0)
+    {
+        closePort();
+        connected.store (false);
+        reconnectFramesLeft = kReconnectFrames;   // wait ~1 s before re-opening
+    }
 }
 
-bool EnttecProDmx::sendDmxFrame()
+void EnttecProDmx::attemptReconnect()
+{
+    // Throttle: one re-open attempt per ~kReconnectFrames ticks.
+    if (reconnectFramesLeft > 0)
+    {
+        --reconnectFramesLeft;
+        return;
+    }
+    reconnectFramesLeft = kReconnectFrames;
+
+    // Retry the same callout path the session opened. It is derived from the
+    // device serial (/dev/cu.usbserial-EN<serial>), so it survives a replug;
+    // re-scanning here would race the message-thread scanDevices(), so we don't.
+    if (selectedDevicePath.empty() || ! openPort (selectedDevicePath, false /* don't record: timer thread */))
+        return;
+
+    setNonBlocking();
+    connected.store (true);   // back in business; firmware/refresh kept from connect()
+}
+
+int EnttecProDmx::sendDmxFrame()
 {
     bool dark = blackout.load();
+
+    // Strobe shutter — decided on the emitted-frame grid so it is locked to
+    // the DMX output clock (no audio-block coupling, no host-scheduling
+    // jitter). The flash is the SHORTEST possible: exactly one emitted frame
+    // lit per period, the rest of the period black. `hz` is the repeat rate
+    // (velocity-driven, 1..20 Hz); the lit frame is always one send tick
+    // (= one 20 Hz half-cycle), so only the black gap grows as hz drops.
     const float hz = strobeHz.load();
     if (hz > 0.0f)
     {
-        const double framesPerHalf = (double) kSendRateHz / (2.0 * (double) hz);
-        const auto   halfCycle     = (std::uint64_t)((double) txFrame / framesPerHalf);
-        if ((halfCycle & 1ull) != 0) dark = true;
+        const auto period = (std::uint64_t) juce::jmax (2.0,
+                                std::round ((double) kSendRateHz / (double) hz));
+        if ((txFrame % period) != 0ull)
+            dark = true;
     }
     ++txFrame;
 
     std::array<unsigned char, kDataLen> snapshot;
     {
-        const juce::ScopedLock lock(dataLock);
+        const juce::ScopedLock lock (dataLock);
         snapshot = dark ? blackoutData : dmxData;
     }
-    return sendPacket(SET_DMX_TX_MODE, snapshot.data(), kDataLen) > 0;
+    return sendPacket (SET_DMX_TX_MODE, snapshot.data(), kDataLen);
 }
 
-int EnttecProDmx::sendPacket(int label, const unsigned char* data, int length)
+int EnttecProDmx::sendPacket (int label, const unsigned char* data, int length)
 {
-    if (serialFd < 0) return 0;
-    std::vector<unsigned char> packet;
-    packet.reserve((size_t)(HEADER_LENGTH + length + 1));
-    packet.push_back(MSG_START_CODE);
-    packet.push_back((unsigned char) label);
-    packet.push_back((unsigned char)(length & 0xFF));
-    packet.push_back((unsigned char)((length >> 8) & 0xFF));
-    packet.insert(packet.end(), data, data + length);
-    packet.push_back(MSG_END_CODE);
+    if (serialFd < 0)
+        return -1;   // no port → hard error (caller arms a reconnect)
 
-    size_t total = packet.size(), sent = 0;
-    while (sent < total)
+    if (length < 0 || (size_t) (HEADER_LENGTH + length + 1) > txBuf.size())
+        return -1;
+
+    // A previous packet was cut short by a would-block: finish it FIRST so the
+    // byte stream stays framed, and skip this tick's fresh packet (the fixtures
+    // hold their last values, so one stale frame is invisible).
+    if (txLen > 0)
     {
-        ssize_t n = ::write(serialFd, packet.data() + sent, total - sent);
-        if (n < 0) { if (errno == EINTR) continue; return 0; }
-        if (n == 0) return 0;
-        sent += (size_t) n;
+        const int flushed = flushTxBuffer();
+        if (flushed <= 0)
+            return flushed;   // still blocked (0) or device gone (-1)
+        return 0;             // old frame completed; this tick's data is dropped
     }
+
+    // Assemble the full ENTTEC frame: start, label, len LSB/MSB, data, end.
+    txBuf[0] = MSG_START_CODE;
+    txBuf[1] = (unsigned char) label;
+    txBuf[2] = (unsigned char) (length & 0xFF);
+    txBuf[3] = (unsigned char) ((length >> 8) & 0xFF);
+    std::memcpy (txBuf.data() + HEADER_LENGTH, data, (size_t) length);
+    txBuf[(size_t) (HEADER_LENGTH + length)] = MSG_END_CODE;
+    txLen  = (size_t) (HEADER_LENGTH + length + 1);
+    txSent = 0;
+
+    return flushTxBuffer();
+}
+
+int EnttecProDmx::flushTxBuffer()
+{
+    while (txSent < txLen)
+    {
+        ssize_t n = ::write (serialFd, txBuf.data() + txSent, txLen - txSent);
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            // EAGAIN/EWOULDBLOCK: the device's buffer is momentarily full (the
+            // fd is non-blocking during the send loop). Keep txSent/txLen so
+            // the NEXT tick resumes this packet where it stopped rather than
+            // splicing a fresh one after a truncated frame. Any other errno
+            // (EIO/ENXIO/EBADF — device unplugged) is a hard failure.
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return 0;
+            txLen = txSent = 0;
+            return -1;
+        }
+        if (n == 0)
+        {
+            txLen = txSent = 0;
+            return -1;
+        }
+        txSent += (size_t) n;
+    }
+
+    txLen = txSent = 0;
     return 1;
 }
 
-bool EnttecProDmx::readByte(unsigned char& out)
+bool EnttecProDmx::readByte (unsigned char& out)
 {
-    if (serialFd < 0) return false;
+    if (serialFd < 0)
+        return false;
+
     for (;;)
     {
-        ssize_t n = ::read(serialFd, &out, 1);
-        if (n == 1) return true;
-        if (n < 0 && errno == EINTR) continue;
-        return false;
+        ssize_t n = ::read (serialFd, &out, 1);
+        if (n == 1)
+            return true;
+        if (n < 0 && errno == EINTR)
+            continue;
+        return false;   // n == 0 (timeout) or hard error
     }
 }
 
-int EnttecProDmx::receivePacket(int label, unsigned char* data, unsigned int expectedLength)
+int EnttecProDmx::receivePacket (int label, unsigned char* data, unsigned int expectedLength)
 {
-    if (serialFd < 0) return 0;
+    if (serialFd < 0)
+        return 0;
+
     unsigned char byte = 0;
-    unsigned char buffer[700];
+    unsigned char buffer[700];   // a params reply may carry up to 5 + 508 config bytes
 
     while (byte != (unsigned char) label)
     {
         while (byte != MSG_START_CODE)
-            if (!readByte(byte)) return 0;
-        if (!readByte(byte)) return 0;
+        {
+            if (! readByte (byte))
+                return 0;
+        }
+        if (! readByte (byte))   // label byte
+            return 0;
     }
 
     unsigned int length = 0;
-    if (!readByte(byte)) return 0;
+    if (! readByte (byte))
+        return 0;
     length = byte;
-    if (!readByte(byte)) return 0;
+    if (! readByte (byte))
+        return 0;
     length += ((unsigned int) byte) << 8;
-    if (length > sizeof(buffer)) return 0;
+
+    if (length > sizeof (buffer))
+        return 0;
 
     for (unsigned int i = 0; i < length; ++i)
-        if (!readByte(buffer[i])) return 0;
+    {
+        if (! readByte (buffer[i]))
+            return 0;
+    }
 
-    if (!readByte(byte) || byte != MSG_END_CODE) return 0;
-    std::memcpy(data, buffer, expectedLength);
+    if (! readByte (byte) || byte != MSG_END_CODE)
+        return 0;
+
+    std::memcpy (data, buffer, expectedLength);
     return 1;
 }
 
-}  // namespace hitlaunchdmx
+}
+
+#else // ! __APPLE__
+
+// ---------------------------------------------------------------------------
+// Non-Apple (e.g. Windows) stub. The real driver depends on macOS IOKit +
+// POSIX termios, which don't exist here. This no-op build exists purely so the
+// GUI / aesthetics can be developed cross-platform: connect() always reports
+// no device, the send timer never runs, and DMX output is disabled. setChannel
+// still records values (harmless) so any visualiser that reads them works.
+// ---------------------------------------------------------------------------
+namespace hitlaunchdmx
+{
+
+EnttecProDmx::EnttecProDmx()
+{
+    dmxData.fill (0);
+    blackoutData.fill (0);
+}
+
+EnttecProDmx::~EnttecProDmx()
+{
+    stopTimer();
+}
+
+int EnttecProDmx::scanDevices()
+{
+    numDevicesDetected = 0;
+    return 0;
+}
+
+bool EnttecProDmx::connect()
+{
+    lastError = "DMX output is disabled on this build (macOS-only driver).";
+    return false;
+}
+
+void EnttecProDmx::disconnect()
+{
+    shouldRun.store (false);
+    stopTimer();
+    connected.store (false);
+}
+
+juce::String EnttecProDmx::getStatusText() const
+{
+    return "DMX output disabled on this build (macOS-only ENTTEC driver).";
+}
+
+void EnttecProDmx::setChannel (int channel, juce::uint8 value)
+{
+    if (channel < 1 || channel > kDmxUniverseSize)
+        return;
+    const juce::ScopedLock lock (dataLock);
+    dmxData[(size_t) channel] = value;
+}
+
+void EnttecProDmx::hiResTimerCallback() {}
+
+}
+
+#endif // __APPLE__
