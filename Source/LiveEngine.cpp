@@ -259,6 +259,10 @@ void LiveEngine::setAuto (int level) noexcept
         params[static_cast<size_t> (idx (P::RelSpeed))].store (0.5f);    // 1×
         params[static_cast<size_t> (idx (P::Crossfade))].store (0.0f);   // auto handles transitions
         params[static_cast<size_t> (idx (P::ColorFade))].store (0.0f);
+        // Recipe knobs back to their defaults so the programs look as designed
+        // (a near-zero Chase tail turns every chase into hopping single pixels).
+        for (const P p : { P::ChaseTail, P::BreatheDepth, P::WildDiv, P::ColorSpeed })
+            params[static_cast<size_t> (idx (p))].store (kParamDefs[static_cast<size_t> (idx (p))].deflt);
         autoLevel.store (level);
         autoRestart.store (true);
     }

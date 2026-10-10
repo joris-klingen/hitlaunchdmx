@@ -93,8 +93,9 @@ any manual pad or look recall also stops auto. Spots are never touched. The
 XL knobs still shape the recipes. **Starting an auto resets everything that
 would bend the programs:** Freeze / Flip / Reverse / To black / From black
 and Blackout off, Spread off, Rel speed 1×, Crossfade and Col fade 0 (the
-level's own transitions take over). Masters, faders, BPM and the recipe knobs
-(tail, depth, speeds) are kept.
+level's own transitions take over), and the recipe knobs back to their
+defaults: Chase tail 50 %, Breathe 100 %, Wild div 50 %, Multi spd 50 %.
+Masters, faders and BPM are kept.
 
 | Level | Changes every | Transitions | Programs |
 |---|---|---|---|

@@ -320,6 +320,10 @@ int main()
         e.buttonEvent (idx (B::Blackout), true);  e.buttonEvent (idx (B::Blackout), false);
         e.setParam (idx (P::Spread), 0.6f);
         e.setParam (idx (P::RelSpeed), 1.0f);
+        e.setParam (idx (P::ChaseTail), 0.05f);
+        e.setParam (idx (P::BreatheDepth), 0.1f);
+        e.setParam (idx (P::WildDiv), 1.0f);
+        e.setParam (idx (P::ColorSpeed), 0.0f);
 
         e.topButton (TopButton::Auto1, true);             // Mellow
         e.topButton (TopButton::Auto1, false);
@@ -328,6 +332,11 @@ int main()
                  && ! e.isButtonOn (idx (B::ToBlack)) && ! e.isBlackout()
                  && e.getParam (idx (P::Spread)) == 0.0f && std::abs (e.getParam (idx (P::RelSpeed)) - 0.5f) < 1e-6f,
                "starting an auto resets toggles, blackout, spread and rel speed");
+        check (e.getParam (idx (P::ChaseTail)) == kParamDefs[static_cast<size_t> (idx (P::ChaseTail))].deflt
+                 && e.getParam (idx (P::BreatheDepth)) == kParamDefs[static_cast<size_t> (idx (P::BreatheDepth))].deflt
+                 && e.getParam (idx (P::WildDiv)) == kParamDefs[static_cast<size_t> (idx (P::WildDiv))].deflt
+                 && e.getParam (idx (P::ColorSpeed)) == kParamDefs[static_cast<size_t> (idx (P::ColorSpeed))].deflt,
+               "starting an auto resets the recipe knobs (chase tail, breathe, wild, multi) to defaults");
         check (e.getSel (0) == 0, "auto never latches the Blackout note");
         run (e, 1.0);
         {
