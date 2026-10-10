@@ -11,11 +11,6 @@ namespace
 {
 constexpr int kTickHz = 100;
 
-// Zone velocity hints: >= 64 routes to the primary palette, < 64 secondary
-// (hitnotedmx kVelocityThreshold).
-constexpr std::uint8_t kZonePrimary   = 127;
-constexpr std::uint8_t kZoneSecondary = 32;
-
 // "127 = instant … 1 = slowest" velocities, from a knob where 0 = instant.
 int instantVel (float n) noexcept { return juce::jlimit (1, 127, 127 - juce::roundToInt (n * 126.0f)); }
 }  // namespace
@@ -95,12 +90,7 @@ void LiveEngine::latchPitch (int pitch) noexcept
     auto& s = sel[static_cast<size_t> (pitch)];
     const auto cur = s.load();
 
-    // Zones cycle off → primary → secondary → off; everything else toggles.
-    std::uint8_t next;
-    if (isZonePitch (pitch))
-        next = cur == 0 ? kZonePrimary : (cur >= 64 ? kZoneSecondary : 0);
-    else
-        next = cur == 0 ? 127 : 0;
+    const std::uint8_t next = cur == 0 ? 127 : 0;
 
     // Without Shift a NEW pad replaces the rest of its group (one chase, one
     // primary colour, …); Shift adds to the group so recipes can combine.
@@ -331,7 +321,6 @@ void LiveEngine::tick (double nowSec)
         else if (hitnotedmx::isColorDynPitch (p))       v = velFromNorm (prm (P::ColorSpeed));
         else if (p >= hitnotedmx::kPrimaryPaletteStart && p < hitnotedmx::kSecondaryPaletteEnd)
                                                         v = instantVel (prm (P::ColorFade));
-        else if (isZonePitch (p))                       v = s;   // route hint
         vel[static_cast<size_t> (p)] = v;
     }
 
@@ -451,7 +440,9 @@ void LiveEngine::fromXml (const juce::XmlElement& xml)
         {
             const int p = tok.upToFirstOccurrenceOf (":", false, false).getIntValue();
             const int v = tok.fromFirstOccurrenceOf (":", false, false).getIntValue();
-            if (p >= 0 && p < 128 && v > 0 && v < 128)
+            // Zones (12-23) are no longer on the Launchpad: drop them from old
+            // saved state so nothing is held that no pad can release.
+            if (p >= 0 && p < 128 && v > 0 && v < 128 && ! (p >= 12 && p < 24))
                 set (p, static_cast<std::uint8_t> (v));
         }
     };

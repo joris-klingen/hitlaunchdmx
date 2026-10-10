@@ -68,7 +68,7 @@ const std::array<juce::Colour, hitnotedmx::kNumColorDyn>& multicolorSwatches()
     return table;
 }
 
-juce::Colour pitchColour (int p, std::uint8_t selVal)
+juce::Colour pitchColour (int p)
 {
     using namespace hitnotedmx;
     if (p >= kPrimaryPaletteStart && p < kSecondaryPaletteStart)
@@ -86,7 +86,6 @@ juce::Colour pitchColour (int p, std::uint8_t selVal)
     if (isChasesPitch (p))     return rgb (0.0f, 0.75f, 1.0f);
     if (isBreathesPitch (p))   return rgb (0.45f, 0.25f, 1.0f);
     if (isWildPitch (p))       return rgb (1.0f, 0.35f, 0.0f);
-    if (isZonePitch (p))       return selVal != 0 && selVal < 64 ? rgb (1.0f, 0.35f, 0.75f) : rgb (0.9f, 0.9f, 0.9f);
     if (p >= kBarPitch0 && p < kBarPitch0 + 4) return rgb (1.0f, 0.85f, 0.2f);
     if (p >= kSpotPitch0 && p < kSpotPitch0 + 4) return (p - kSpotPitch0) % 2 == 0 ? rgb (1.0f, 0.7f, 0.35f) : rgb (0.6f, 0.4f, 1.0f);
     return juce::Colours::grey;
@@ -164,7 +163,7 @@ PadView describeLaunchpad (const LiveEngine& e, int row, int col)
             {
                 const int p = kSpotPitch0 + (col - 1);
                 lit = e.getSel (p) != 0;
-                c = pitchColour (p, e.getSel (p));
+                c = pitchColour (p);
                 break;
             }
             case TopButton::Clear:    c = juce::Colours::white;          break;
@@ -178,10 +177,8 @@ PadView describeLaunchpad (const LiveEngine& e, int row, int col)
     if (const int pitch = padPitch (page, row, col); pitch >= 0)
     {
         const auto s  = e.getSel (pitch);
-        const auto c  = pitchColour (pitch, s);
-        auto label = pitchLabel (pitch);
-        if (isZonePitch (pitch) && s != 0)
-            label << (s >= 64 ? " (prim)" : " (sec)");
+        const auto c  = pitchColour (pitch);
+        const auto label = pitchLabel (pitch);
         return { s != 0 ? c : c.withMultipliedBrightness (kIdle), label, s != 0 };
     }
 

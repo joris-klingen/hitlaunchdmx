@@ -19,8 +19,8 @@ using hitnotedmx::EnttecProDmx;
 using hitnotedmx::Rig;
 using hitnotedmx::SelectionMask;
 
-// A stored look: the latched note set (per pitch: 0 = off, else the velocity
-// hint — 127, or the secondary-route velocity for a zone).
+// A stored look: the latched note set (per pitch: 0 = off, 127 = held; the
+// engine replaces the velocity with the XL knob for that bank).
 struct Look
 {
     bool used = false;

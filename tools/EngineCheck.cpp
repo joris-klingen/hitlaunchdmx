@@ -81,14 +81,28 @@ int main()
     e.padPressed (8, 3);
     check (e.getSel (86) == 0, "tapping a lit pad unlatches it");
 
-    // ── zones cycle primary → secondary → off ──
+    // ── Motion page: colour column (cols 7-8, rows 8-3) + Multicolor rows 2-1 ──
     e.setViewPage (kPageMotion);
-    e.padPressed (2, 1);
-    check (e.getSel (kZonePitch0) >= 64, "zone tap 1 = primary route");
-    e.padPressed (2, 1);
-    check (e.getSel (kZonePitch0) > 0 && e.getSel (kZonePitch0) < 64, "zone tap 2 = secondary route");
-    e.padPressed (2, 1);
-    check (e.getSel (kZonePitch0) == 0, "zone tap 3 = off");
+    check (padPitch (kPageMotion, 8, 7) == 85 && padPitch (kPageMotion, 8, 8) == 87,
+           "Motion row 8 cols 7-8 = Red, Orange");
+    check (padPitch (kPageMotion, 3, 8) == hitnotedmx::kPrimaryPaletteStart + 22, "Motion (3,8) = Cool white");
+    check (padPitch (kPageMotion, 2, 1) == hitnotedmx::kColorDynStart && padPitch (kPageMotion, 1, 8) == hitnotedmx::kColorDynStart + 15,
+           "Motion rows 2-1 = Multicolor Rainbow .. Night sky");
+    check (padPitch (kPageMotion, 3, 6) == hitnotedmx::kWildStart + 11, "Motion (3,6) = last Wild (Burst)");
+    bool noZones = true;
+    for (int row = 1; row <= 8; ++row)
+        for (int col = 1; col <= 8; ++col)
+            for (int pg : { kPageMotion, kPageColour })
+                if (const int p = padPitch (pg, row, col); p >= 12 && p < 24)
+                    noZones = false;
+    check (noZones, "no zone pads on the Launchpad");
+    e.padPressed (8, 8);                                   // Orange from the Motion page
+    check (e.getSel (87) != 0 && e.getSel (85) == 0, "Motion colour replaces the Colour-page primary");
+    e.padPressed (2, 1);                                   // Rainbow
+    check (e.getSel (hitnotedmx::kColorDynStart) != 0, "Motion (2,1) latches Rainbow");
+    e.padPressed (2, 1);                                   // Rainbow off again
+    e.padPressed (8, 7);                                   // Red (Motion page) replaces Orange
+    check (e.getSel (85) != 0 && e.getSel (87) == 0, "Motion Red replaces Motion Orange");
 
     // ── bar fader ──
     e.setParam (kFaderParam0 + 0, 0.0f);
