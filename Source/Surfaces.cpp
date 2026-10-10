@@ -86,7 +86,6 @@ juce::Colour pitchColour (int p)
     if (isChasesPitch (p))     return rgb (0.0f, 0.75f, 1.0f);
     if (isBreathesPitch (p))   return rgb (0.45f, 0.25f, 1.0f);
     if (isWildPitch (p))       return rgb (1.0f, 0.35f, 0.0f);
-    if (p >= kBarPitch0 && p < kBarPitch0 + 4) return rgb (1.0f, 0.85f, 0.2f);
     if (p >= kSpotPitch0 && p < kSpotPitch0 + 4) return (p - kSpotPitch0) % 2 == 0 ? rgb (1.0f, 0.7f, 0.35f) : rgb (0.6f, 0.4f, 1.0f);
     return juce::Colours::grey;
 }

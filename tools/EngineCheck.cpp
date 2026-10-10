@@ -93,9 +93,9 @@ int main()
     for (int row = 1; row <= 8; ++row)
         for (int col = 1; col <= 8; ++col)
             for (int pg : { kPageMotion, kPageColour })
-                if (const int p = padPitch (pg, row, col); p >= 12 && p < 24)
+                if (const int p = padPitch (pg, row, col); (p >= 12 && p < 24) || (p >= 5 && p <= 8))
                     noZones = false;
-    check (noZones, "no zone pads on the Launchpad");
+    check (noZones, "no zone or bar-selector pads on the Launchpad");
     e.padPressed (8, 8);                                   // Orange from the Motion page
     check (e.getSel (87) != 0 && e.getSel (85) == 0, "Motion colour replaces the Colour-page primary");
     e.padPressed (2, 1);                                   // Rainbow
@@ -165,6 +165,14 @@ int main()
         LiveEngine e2 (dmx);
         e2.fromXml (*xml);
         check (e2.lookUsed (0) && e2.getSel (85) != 0, "state survives toXml/fromXml");
+
+        // Old saved state with a bar selector + zone latched: both dropped on load.
+        juce::XmlElement old ("HitLaunchDmx");
+        old.setAttribute ("sel", "2:127 6:127 14:127 85:127");
+        LiveEngine e3 (dmx);
+        e3.fromXml (old);
+        check (e3.getSel (6) == 0 && e3.getSel (14) == 0 && e3.getSel (2) != 0 && e3.getSel (85) != 0,
+               "loading drops bar selectors + zones, keeps the rest");
     }
 
     std::printf (failures == 0 ? "\nALL OK\n" : "\n%d FAILURE(S)\n", failures);

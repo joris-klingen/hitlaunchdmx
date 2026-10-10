@@ -4,7 +4,7 @@ A **standalone macOS app** (JUCE 8, CMake) for playing the hitdmx rig live
 without a DAW:
 
 - a **Novation Launchpad Mini MK3** picks *what* is lit — recipes, colours,
-  bars, spots — and stores/recalls whole looks;
+  spots — and stores/recalls whole looks;
 - a **Novation Launch Control XL** (Factory template 1) rides *how* —
   per-bar dims on the faders, bump/strobe/freeze/… on the buttons, tempo,
   relative speed, tail and the other parameters on the knobs;
@@ -49,7 +49,7 @@ Launchpad + virtual XL panel, visualiser, tempo readout, autosave.
 | Strobe 48 | XL *Strobe Hz* (also the driver shutter rate) |
 | Multicolor 60–83 | XL *Multi spd* |
 | Palette 84–119 | XL *Col fade* (0 = instant) |
-| Bars 5–8, spots 1–4, blackout 0 | 127 (bar brightness lives on the faders) |
+| Spots 1–4, blackout 0 | 127 |
 | Bump 120 / Release 121 | *Bump lvl* / *Release* |
 | Crossfade 122 / Spread 126 | knob; held only when > 0 |
 | To/From black 10/9 | *Blk glide* (0 = instant) |
@@ -73,7 +73,7 @@ Beat-based lengths (bump release, crossfade) scale with it — agreed.
 | | |
 |---|---|
 | Right column (top → bottom) | page: **Motion**, **Colour**, **Looks 1–6** |
-| Motion page (all-in-one) | cols 1-6: rows 8-7 Chases · 6-5 Breathes · 4-3 Wild (each bank 6 × 2: upper row = notes 0-5, lower 6-11) · cols 7-8, rows 8-3: 12 primary colours (Red, Orange · Yellow, Green · Teal, Cyan · Blue, Violet · Magenta, Pink · Warm white, Cool white) · rows 2-1: 16 Multicolor (Rainbow … Night sky). Picks are `kMotionColours` / `kMotionMulticolor` in `PadLayout.h`. No zones on the Launchpad |
+| Motion page (all-in-one) | cols 1-6: rows 8-7 Chases · 6-5 Breathes · 4-3 Wild (each bank 6 × 2: upper row = notes 0-5, lower 6-11) · cols 7-8, rows 8-3: 12 primary colours (Red, Orange · Yellow, Green · Teal, Cyan · Blue, Violet · Magenta, Pink · Warm white, Cool white) · rows 2-1: 16 Multicolor (Rainbow … Night sky). Picks are `kMotionColours` / `kMotionMulticolor` in `PadLayout.h`. No zones or bar selectors on the Launchpad — all bars always play, the XL faders set their levels |
 | Colour page | rows 8-6 Primary 24 · row 5 + row 4 cols 1-4 Secondary 12 · rows 3-1 Multicolor 24 |
 | Looks pages | 64 looks each (384 total) |
 | Top row | Spot L WW · Spot L col · Spot R WW · Spot R col · Clear · Store · Shift · Blackout |
@@ -131,8 +131,9 @@ quarantine flag.
 
 - **2026-10 — Motion page is the all-in-one play page:** zones removed from
   the Launchpad; 12 colours in the right two columns (rows 8-3) and 16
-  Multicolor looks across the bottom two rows. Zones in old saved state are
-  dropped on load.
+  Multicolor looks across the bottom two rows. Zones and bar selectors are
+  off the Launchpad (bar levels = XL faders) and dropped from old saved
+  state on load.
 - **2026-10 — rebuilt on hitnotedmx's engine.** The forked scene engine
   (`Scene.h`, `SceneEngine`, own `Rig`/`Palette`/ENTTEC/visualiser copies, 128
   fixed scenes) is gone. The app now holds hitnotedmx notes: Launchpad builds

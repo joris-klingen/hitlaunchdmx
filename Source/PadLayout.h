@@ -23,8 +23,8 @@ namespace hitlaunchdmx
 //                   octave, lower row = 6-11);
 //                   cols 7-8, rows 8-3: 12 primary colours (kMotionColours);
 //                   rows 2-1, full width: 16 Multicolor looks (kMotionMulticolor).
-//                   No zones or bar selectors on the Launchpad (bars are on the
-//                   Colour page; zones are left to hitnotedmx).
+//                   No zones or bar selectors on the Launchpad: every bar is
+//                   always in play and the XL faders set each bar's level.
 //   Page 2 Colour   rows 8-6 Primary 24 · row 5 + row 4 cols 1-4 Secondary 12
 //                   · rows 3-1 Multicolor 24 (8 per row).
 //   Pages 3-8       Looks: 64 stored looks each (top-left = first).
@@ -43,7 +43,6 @@ inline constexpr const char* kPageNames[kNumPages] {
 // hitnotedmx structural notes used here (see its mappings/v<N>.tsv).
 inline constexpr int kBlackoutPitch  = 0;
 inline constexpr int kSpotPitch0     = 1;    // 1 L WW, 2 L col, 3 R WW, 4 R col
-inline constexpr int kBarPitch0      = 5;    // 5..8 Left, Mid left, Mid right, Right
 inline constexpr int kFromBlackPitch = 9;
 inline constexpr int kToBlackPitch   = 10;
 inline constexpr int kBumpPitch      = 120;
@@ -130,7 +129,6 @@ inline int padLook (int page, int row, int col) noexcept
 // the other pads in its group. -1 = no group (spots toggle independently).
 inline int pitchGroup (int p) noexcept
 {
-    if (p >= kBarPitch0 && p < kBarPitch0 + 4)                      return 1;
     if (hitnotedmx::isChasesPitch (p))                              return 3;
     if (hitnotedmx::isBreathesPitch (p))                            return 4;
     if (hitnotedmx::isWildPitch (p))                                return 5;

@@ -440,9 +440,11 @@ void LiveEngine::fromXml (const juce::XmlElement& xml)
         {
             const int p = tok.upToFirstOccurrenceOf (":", false, false).getIntValue();
             const int v = tok.fromFirstOccurrenceOf (":", false, false).getIntValue();
-            // Zones (12-23) are no longer on the Launchpad: drop them from old
-            // saved state so nothing is held that no pad can release.
-            if (p >= 0 && p < 128 && v > 0 && v < 128 && ! (p >= 12 && p < 24))
+            // Bar selectors (5-8) and zones (12-23) are not on the Launchpad:
+            // drop them from old saved state so nothing is held that no pad
+            // can release (a held bar selector would darken the other bars).
+            const bool unreachable = (p >= 5 && p <= 8) || (p >= 12 && p < 24);
+            if (p >= 0 && p < 128 && v > 0 && v < 128 && ! unreachable)
                 set (p, static_cast<std::uint8_t> (v));
         }
     };
