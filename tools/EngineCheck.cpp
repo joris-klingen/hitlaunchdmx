@@ -276,11 +276,11 @@ int main()
 
         // Old saved state with a bar selector + zone latched: both dropped on load.
         juce::XmlElement old ("HitLaunchDmx");
-        old.setAttribute ("sel", "2:127 6:127 14:127 85:127");
+        old.setAttribute ("sel", "0:127 2:127 6:127 14:127 85:127");
         LiveEngine e3 (dmx);
         e3.fromXml (old);
-        check (e3.getSel (6) == 0 && e3.getSel (14) == 0 && e3.getSel (2) != 0 && e3.getSel (85) != 0,
-               "loading drops bar selectors + zones, keeps the rest");
+        check (e3.getSel (0) == 0 && e3.getSel (6) == 0 && e3.getSel (14) == 0 && e3.getSel (2) != 0 && e3.getSel (85) != 0,
+               "loading drops blackout note, bar selectors + zones, keeps the rest");
     }
 
     // ── hold a page button = clear ──
@@ -305,9 +305,36 @@ int main()
         e.setParam (idx (P::Bpm), normFromBpm (120.0));   // exact (the tap test left ~120)
         e.restartClock();
         run (e, 0.02);
+        // Every program note is a real recipe/colour note (never 0 = Blackout).
+        bool notesOk = true;
+        for (const auto& L : lv)
+            for (int i = 0; i < L.numPrograms; ++i)
+                for (const int n : L.programs[static_cast<size_t> (i)].notes)
+                    if (n != -1 && n < hitnotedmx::kChasesStart) notesOk = false;
+        check (notesOk, "auto programs hold only recipe/colour notes (no Blackout)");
+
+        // Mess everything up first: auto must reset it all.
+        e.buttonEvent (idx (B::Flip), true);      e.buttonEvent (idx (B::Flip), false);
+        e.buttonEvent (idx (B::Freeze), true);    e.buttonEvent (idx (B::Freeze), false);
+        e.buttonEvent (idx (B::ToBlack), true);   e.buttonEvent (idx (B::ToBlack), false);
+        e.buttonEvent (idx (B::Blackout), true);  e.buttonEvent (idx (B::Blackout), false);
+        e.setParam (idx (P::Spread), 0.6f);
+        e.setParam (idx (P::RelSpeed), 1.0f);
+
         e.topButton (TopButton::Auto1, true);             // Mellow
         e.topButton (TopButton::Auto1, false);
         run (e, 0.05);
+        check (! e.isButtonOn (idx (B::Flip)) && ! e.isButtonOn (idx (B::Freeze))
+                 && ! e.isButtonOn (idx (B::ToBlack)) && ! e.isBlackout()
+                 && e.getParam (idx (P::Spread)) == 0.0f && std::abs (e.getParam (idx (P::RelSpeed)) - 0.5f) < 1e-6f,
+               "starting an auto resets toggles, blackout, spread and rel speed");
+        check (e.getSel (0) == 0, "auto never latches the Blackout note");
+        run (e, 1.0);
+        {
+            float lit = 0;
+            for (int b = 0; b < 4; ++b) { const auto x = barSum (e, b); lit += x.r + x.g + x.b; }
+            check (lit > 1.0f, "auto program actually lights the rig");
+        }
         check (e.getAutoLevel() == 0 && e.getAutoProgram() == 0 && holds (lv[0].programs[0]),
                "Auto 1 starts Mellow program 1");
         run (e, lv[0].barsPerProgram * 4 * 0.5 + 0.1);    // 8 bars at 120 BPM

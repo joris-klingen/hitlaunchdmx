@@ -249,6 +249,16 @@ void LiveEngine::setAuto (int level) noexcept
         autoLevel.store (-1);          // stop; the current program stays on stage
     else
     {
+        // Starting an auto = a clean slate: every modifier that would bend
+        // the programs goes back to neutral (the selection itself is replaced
+        // by the first program in the tick; spots stay as they are).
+        for (const B b : { B::Freeze, B::Flip, B::Reverse, B::ToBlack, B::FromBlack })
+            buttonOn[static_cast<size_t> (idx (b))].store (false);
+        blackoutOn.store (false);
+        params[static_cast<size_t> (idx (P::Spread))].store (0.0f);      // no bar de-sync
+        params[static_cast<size_t> (idx (P::RelSpeed))].store (0.5f);    // 1×
+        params[static_cast<size_t> (idx (P::Crossfade))].store (0.0f);   // auto handles transitions
+        params[static_cast<size_t> (idx (P::ColorFade))].store (0.0f);
         autoLevel.store (level);
         autoRestart.store (true);
     }
@@ -702,7 +712,8 @@ void LiveEngine::fromXml (const juce::XmlElement& xml)
             // Bar selectors (5-8) and zones (12-23) are not on the Launchpad:
             // drop them from old saved state so nothing is held that no pad
             // can release (a held bar selector would darken the other bars).
-            const bool unreachable = (p >= 5 && p <= 8) || (p >= 12 && p < 24);
+            // Blackout (0) is the XL/engine toggle, never a latched note.
+            const bool unreachable = p == 0 || (p >= 5 && p <= 8) || (p >= 12 && p < 24);
             if (p >= 0 && p < 128 && v > 0 && v < 128 && ! unreachable)
                 set (p, static_cast<std::uint8_t> (v));
         }

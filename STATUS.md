@@ -90,7 +90,11 @@ on XL top 8.)
 `Source/AutoPrograms.h`, switching on the global bar grid. Tap to start, tap
 again to stop (the current program stays on stage), tap another to switch;
 any manual pad or look recall also stops auto. Spots are never touched. The
-XL knobs still shape the recipes.
+XL knobs still shape the recipes. **Starting an auto resets everything that
+would bend the programs:** Freeze / Flip / Reverse / To black / From black
+and Blackout off, Spread off, Rel speed 1×, Crossfade and Col fade 0 (the
+level's own transitions take over). Masters, faders, BPM and the recipe knobs
+(tail, depth, speeds) are kept.
 
 | Level | Changes every | Transitions | Extra |
 |---|---|---|---|
@@ -163,6 +167,10 @@ quarantine flag.
 
 ## Changelog
 
+- **2026-10 — Auto fix + reset:** auto programs zero-filled their unused note
+  slots, so every program also held note 0 (hitnotedmx Blackout) and the rig
+  went dark except for bar bumps — fixed (and note 0 is dropped from saved
+  state). Starting an auto now resets the modifiers to neutral.
 - **2026-10 — Auto modes:** Launchpad top row 5–8 = Mellow / Groove / Party /
   Disco auto (program loops on the bar grid, level-dependent transitions and
   auto bar bumps). Clear / Store / Shift became gestures (hold page button,

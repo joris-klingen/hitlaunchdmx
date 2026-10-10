@@ -35,7 +35,17 @@ inline constexpr int kMaxNotes      = 4;
 
 struct AutoProgram
 {
-    std::array<int, kMaxNotes> notes { -1, -1, -1, -1 };   // hitnotedmx pitches, -1 = unused
+    // Built from a note list; unused slots are -1. (A plain aggregate would
+    // zero-fill them — and note 0 is hitnotedmx's Blackout.)
+    AutoProgram (std::initializer_list<int> ns) noexcept
+    {
+        notes.fill (-1);
+        int i = 0;
+        for (const int n : ns)
+            if (i < kMaxNotes) notes[static_cast<size_t> (i++)] = n;
+    }
+
+    std::array<int, kMaxNotes> notes {};   // hitnotedmx pitches, -1 = unused
 };
 
 struct AutoLevel
@@ -91,20 +101,20 @@ inline const std::array<AutoLevel, kNumAutoLevels>& autoLevels()
     using namespace autonotes;
     static const std::array<AutoLevel, kNumAutoLevels> levels {{
         { "Mellow", 8, 127, 20, 0, false, 8, {{
-            {{ Tide, Blue }},          {{ MoonRise, Amber }},     {{ Ocean }},               {{ SoftBall, Violet }},
-            {{ Aurora, Teal }},        {{ Borealis }},            {{ Drift, WarmWhite }},    {{ Twilight }},
+            AutoProgram { Tide, Blue },          AutoProgram { MoonRise, Amber },     AutoProgram { Ocean },               AutoProgram { SoftBall, Violet },
+            AutoProgram { Aurora, Teal },        AutoProgram { Borealis },            AutoProgram { Drift, WarmWhite },    AutoProgram { Twilight },
         }}},
         { "Groove", 4, 100, 70, 0, false, 8, {{
-            {{ Waves, Cyan }},         {{ Bloom, Magenta }},      {{ Expand, Orange }},      {{ Sunset }},
-            {{ Ripple, Royal }},       {{ Halo, Pink }},          {{ Theater, Amber }},      {{ Lava }},
+            AutoProgram { Waves, Cyan },         AutoProgram { Bloom, Magenta },      AutoProgram { Expand, Orange },      AutoProgram { Sunset },
+            AutoProgram { Ripple, Royal },       AutoProgram { Halo, Pink },          AutoProgram { Theater, Amber },      AutoProgram { Lava },
         }}},
         { "Party", 2, 0, 127, 4, true, 8, {{
-            {{ Chase, Red }},          {{ Bounce, Cyan }},        {{ Fire, ChaseH }},        {{ Spiral, Lime }},
-            {{ Rain, Blue }},          {{ Plasma }},              {{ PingPong, HotPink }},   {{ Fountain, Yellow }},
+            AutoProgram { Chase, Red },          AutoProgram { Bounce, Cyan },        AutoProgram { Fire, ChaseH },        AutoProgram { Spiral, Lime },
+            AutoProgram { Rain, Blue },          AutoProgram { Plasma },              AutoProgram { PingPong, HotPink },   AutoProgram { Fountain, Yellow },
         }}},
         { "Disco", 1, 0, 127, 1, false, 8, {{
-            {{ Disco }},               {{ Sparkle, Magenta }},    {{ Rainbow, Chase }},      {{ FastBall, Cyan }},
-            {{ Police }},              {{ Glitch, Yellow }},      {{ Pong, HotPink }},       {{ Lightning, CoolWhite }},
+            AutoProgram { Disco },               AutoProgram { Sparkle, Magenta },    AutoProgram { Rainbow, Chase },      AutoProgram { FastBall, Cyan },
+            AutoProgram { Police },              AutoProgram { Glitch, Yellow },      AutoProgram { Pong, HotPink },       AutoProgram { Lightning, CoolWhite },
         }}},
     }};
     return levels;
