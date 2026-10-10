@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "AutoPrograms.h"
 #include "Recipes.h"   // hitnotedmx: bank ranges, strobe constants
 
 namespace hitlaunchdmx
@@ -22,6 +23,7 @@ LiveEngine::LiveEngine (EnttecProDmx& d) : dmx (d)
     for (auto& b : buttonOn)      b.store (false);
     for (auto& b : buttonPresses) b.store (0);
     for (auto& s : sel)           s.store (0);
+    for (auto& d : padDown)       d.store (false);
 }
 
 LiveEngine::~LiveEngine() { stop(); }
@@ -95,59 +97,160 @@ void LiveEngine::latchPitch (int pitch) noexcept
 {
     auto& s = sel[static_cast<size_t> (pitch)];
     const auto cur = s.load();
-
     const std::uint8_t next = cur == 0 ? 127 : 0;
 
-    // Without Shift a NEW pad replaces the rest of its group (one chase, one
-    // primary colour, …); Shift adds to the group so recipes can combine.
+    // A NEW pad replaces the rest of its group (one chase, one primary, …),
+    // unless another pad of the group is being held (or on-screen Shift) —
+    // then it is ADDED, so recipes can combine.
     const int group = pitchGroup (pitch);
     if (cur == 0 && group >= 0 && ! shiftHeld.load())
-        for (int p = 0; p < 128; ++p)
-            if (p != pitch && pitchGroup (p) == group)
-                sel[static_cast<size_t> (p)].store (0);
+    {
+        bool chord = false;
+        for (int p = 0; p < 128 && ! chord; ++p)
+            chord = p != pitch && pitchGroup (p) == group && padDown[static_cast<size_t> (p)].load();
+        if (! chord)
+            for (int p = 0; p < 128; ++p)
+                if (p != pitch && pitchGroup (p) == group)
+                    sel[static_cast<size_t> (p)].store (0);
+    }
 
     s.store (next);
     activeLook.store (-1);   // the look on stage is now a modified one
+    stopAutoByHand();
 }
 
-void LiveEngine::padOnLookPage (int slot) noexcept
+void LiveEngine::recallLook (int slot) noexcept
 {
-    auto& look = looks[static_cast<size_t> (slot)];
-
-    if (storeArmed.load())
-    {
-        if (shiftHeld.load())
-            look = Look {};                     // Shift + Store + pad = delete
-        else
-        {
-            look.used = true;
-            for (int p = 0; p < 128; ++p)
-                look.sel[static_cast<size_t> (p)] = sel[static_cast<size_t> (p)].load();
-            activeLook.store (slot);
-        }
-        storeArmed.store (false);
-        return;
-    }
-
+    const auto& look = looks[static_cast<size_t> (slot)];
     if (! look.used)
         return;
     for (int p = 0; p < 128; ++p)
         sel[static_cast<size_t> (p)].store (look.sel[static_cast<size_t> (p)]);
     activeLook.store (slot);
+    stopAutoByHand();
 }
 
-void LiveEngine::padPressed (int row, int col) noexcept
+void LiveEngine::storeLook (int slot) noexcept
+{
+    auto& look = looks[static_cast<size_t> (slot)];
+    look.used = true;
+    for (int p = 0; p < 128; ++p)
+        look.sel[static_cast<size_t> (p)] = sel[static_cast<size_t> (p)].load();
+    activeLook.store (slot);
+}
+
+void LiveEngine::padPressed (int row, int col, double nowSec) noexcept
 {
     const int page = viewPage.load();
     {
         const juce::SpinLock::ScopedLockType sl (stateLock);
-        const int pitch = padPitch (page, row, col);
-        if (pitch >= 0)
+        if (const int pitch = padPitch (page, row, col); pitch >= 0)
+        {
             latchPitch (pitch);
+            padDown[static_cast<size_t> (pitch)].store (true);
+        }
         else if (const int slot = padLook (page, row, col); slot >= 0)
-            padOnLookPage (slot);
+        {
+            heldLookSlot   = slot;     // recall on release, store on a long hold
+            heldLookSince  = nowSec;
+            heldLookStored = false;
+            heldLookOut.store (slot);
+        }
         else
             return;
+    }
+    changed();
+}
+
+void LiveEngine::padReleased (int row, int col, double nowSec) noexcept
+{
+    juce::ignoreUnused (nowSec);
+    const int page = viewPage.load();
+    {
+        const juce::SpinLock::ScopedLockType sl (stateLock);
+        if (const int pitch = padPitch (page, row, col); pitch >= 0)
+        {
+            padDown[static_cast<size_t> (pitch)].store (false);
+            return;
+        }
+        const int slot = padLook (page, row, col);
+        if (slot < 0 || slot != heldLookSlot)
+            return;
+        if (! heldLookStored)
+            recallLook (slot);         // short tap = recall
+        heldLookSlot = -1;
+        heldLookOut.store (-1);
+    }
+    changed();
+}
+
+void LiveEngine::pageButton (int page, bool down, double nowSec) noexcept
+{
+    if (page < 0 || page >= kNumPages)
+        return;
+    {
+        const juce::SpinLock::ScopedLockType sl (stateLock);
+        if (down)
+        {
+            viewPage.store (page);
+            heldPage = page;  heldPageSince = nowSec;  heldPageFired = false;
+            // Changing page releases any held pad (its release lands elsewhere).
+            for (auto& d : padDown) d.store (false);
+            heldLookSlot = -1;  heldLookOut.store (-1);
+        }
+        else if (page == heldPage)
+        {
+            heldPage = -1;
+        }
+    }
+    changed();
+}
+
+void LiveEngine::pollHolds (double nowSec) noexcept
+{
+    bool fired = false;
+    bool clear = false;
+    {
+        const juce::SpinLock::ScopedLockType sl (stateLock);
+        if (heldLookSlot >= 0 && ! heldLookStored && nowSec - heldLookSince >= kLookHoldSec)
+        {
+            storeLook (heldLookSlot);   // long hold = store what's on stage
+            heldLookStored = true;
+            fired = true;
+        }
+        if (heldPage >= 0 && ! heldPageFired && nowSec - heldPageSince >= kClearHoldSec)
+        {
+            heldPageFired = true;
+            clear = true;
+        }
+    }
+    if (clear)
+        clearSelection();
+    else if (fired)
+        changed();
+}
+
+void LiveEngine::deleteLook (int slot) noexcept
+{
+    if (slot < 0 || slot >= kNumLooks)
+        return;
+    {
+        const juce::SpinLock::ScopedLockType sl (stateLock);
+        looks[static_cast<size_t> (slot)] = Look {};
+        if (activeLook.load() == slot)
+            activeLook.store (-1);
+    }
+    changed();
+}
+
+void LiveEngine::setAuto (int level) noexcept
+{
+    if (level < 0 || level >= kNumAutoLevels || autoLevel.load() == level)
+        autoLevel.store (-1);          // stop; the current program stays on stage
+    else
+    {
+        autoLevel.store (level);
+        autoRestart.store (true);
     }
     changed();
 }
@@ -165,10 +268,11 @@ void LiveEngine::topButton (TopButton b, bool down) noexcept
                 activeLook.store (-1);
             }
             break;
-        case TopButton::Clear:    if (down) clearSelection(); break;
-        case TopButton::Store:    if (down) storeArmed.store (! storeArmed.load()); break;
-        case TopButton::Shift:    shiftHeld.store (down); break;
-        case TopButton::Blackout: if (down) blackoutOn.store (! blackoutOn.load()); break;
+        case TopButton::Auto1: case TopButton::Auto2:
+        case TopButton::Auto3: case TopButton::Auto4:
+            if (down)
+                setAuto (static_cast<int> (b) - static_cast<int> (TopButton::Auto1));
+            return;
     }
     changed();
 }
@@ -179,6 +283,7 @@ void LiveEngine::clearSelection() noexcept
         const juce::SpinLock::ScopedLockType sl (stateLock);
         for (auto& s : sel) s.store (0);
         activeLook.store (-1);
+        stopAutoByHand();
     }
     changed();
 }
@@ -297,6 +402,73 @@ void LiveEngine::tick (double nowSec)
     }
     const double t = scaledBeats;
 
+    // 1b. Auto mode: on the global bar grid, swap the look for the level's
+    //     next program. Writing the selection needs stateLock, which the tick
+    //     must never wait on — so try it, and retry next tick (10 ms) if busy.
+    const int autoLvl = autoLevel.load (std::memory_order_relaxed);
+    int autoBumpBar = -1;
+    if (autoLvl >= 0)
+    {
+        const auto& L = autoLevels()[static_cast<size_t> (autoLvl)];
+        if (autoRestart.exchange (false) || autoLvl != autoAppliedLevel)
+        {
+            autoStartBar     = std::floor (globalBeats / 4.0);
+            autoAppliedLevel = autoLvl;
+            autoApplied      = -1;
+            autoLastChange   = -1.0e9;
+            autoBeatSeen     = std::floor (globalBeats);
+            autoBumpCount    = 0;
+        }
+        const double sinceStart = std::floor (globalBeats / 4.0) - autoStartBar;      // bars
+        const int    block      = static_cast<int> (sinceStart) / L.barsPerProgram;
+        const int    prog       = block % L.numPrograms;
+        autoNextChange = (autoStartBar + (block + 1) * L.barsPerProgram) * 4.0;
+
+        if (prog != autoApplied)
+        {
+            const juce::SpinLock::ScopedTryLockType tl (stateLock);
+            if (tl.isLocked())
+            {
+                for (int p = 0; p < 128; ++p)
+                    if (p < kSpotPitch0 || p >= kSpotPitch0 + 4)   // auto leaves the spots alone
+                        sel[static_cast<size_t> (p)].store (0);
+                for (const int n : L.programs[static_cast<size_t> (prog)].notes)
+                    if (n >= 0 && n < 128)
+                        sel[static_cast<size_t> (n)].store (127);
+                activeLook.store (-1);
+                if (autoApplied >= 0)
+                    autoLastChange = globalBeats;
+                autoApplied = prog;
+                autoProgramOut.store (prog);
+                changed();
+            }
+        }
+
+        // Auto bumps every N global beats: sweep across the bars, or random.
+        const double beat = std::floor (globalBeats);
+        if (beat > autoBeatSeen)
+        {
+            autoBeatSeen = beat;
+            if (L.bumpEveryBeats > 0 && static_cast<long long> (beat) % L.bumpEveryBeats == 0)
+            {
+                const int bars = juce::jmin (grid.rig.cols, kNumBarBumps);
+                if (bars > 0)
+                {
+                    std::uint32_t h = static_cast<std::uint32_t> (static_cast<long long> (beat)) * 0x9E3779B9u;
+                    h ^= h >> 15;  h *= 0x85EBCA6Bu;  h ^= h >> 13;
+                    autoBumpBar = L.bumpSweep ? autoBumpCount % bars : static_cast<int> (h % static_cast<std::uint32_t> (bars));
+                    ++autoBumpCount;
+                }
+            }
+        }
+    }
+    else
+    {
+        autoAppliedLevel = -1;
+        autoApplied      = -1;
+        autoProgramOut.store (-1, std::memory_order_relaxed);
+    }
+
     // 2. Build the held-note set. A pitch keeps its onset beat while it stays
     //    held (velocity changes don't retrigger); momentary presses that both
     //    started and ended between two ticks still count as one onset.
@@ -326,7 +498,11 @@ void LiveEngine::tick (double nowSec)
         else if (hitnotedmx::isWildPitch (p))           v = velFromNorm (prm (P::WildDiv));
         else if (hitnotedmx::isColorDynPitch (p))       v = velFromNorm (prm (P::ColorSpeed));
         else if (p >= hitnotedmx::kPrimaryPaletteStart && p < hitnotedmx::kSecondaryPaletteEnd)
-                                                        v = instantVel (prm (P::ColorFade));
+        {
+            v = instantVel (prm (P::ColorFade));
+            if (autoLvl >= 0)                          // auto: colours glide at least this slowly
+                v = juce::jmin (v, autoLevels()[static_cast<size_t> (autoLvl)].colourVel);
+        }
         vel[static_cast<size_t> (p)] = v;
     }
 
@@ -345,6 +521,15 @@ void LiveEngine::tick (double nowSec)
 
     vel[kReleasePitch] = velFromNorm (prm (P::BumpRelease));
     if (prm (P::Crossfade) > 0.0f) vel[kCrossfadePitch] = velFromNorm (prm (P::Crossfade));
+    else if (autoLvl >= 0)
+    {
+        // Auto transitions: hold Crossfade from just BEFORE each change (the
+        // xfade buffer must already be tracking the old look when the new one
+        // lands) until one bar after it, so the motion isn't blurred between.
+        const auto& L = autoLevels()[static_cast<size_t> (autoLvl)];
+        if (L.xfadeVel > 0 && (globalBeats >= autoNextChange - 0.25 || globalBeats < autoLastChange + 4.0))
+            vel[kCrossfadePitch] = L.xfadeVel;
+    }
     if (prm (P::Spread)    > 0.0f) vel[kSpreadPitch]    = velFromNorm (prm (P::Spread));
 
     for (int p = 0; p < 128; ++p)
@@ -397,7 +582,7 @@ void LiveEngine::tick (double nowSec)
         for (int b = 0; b < kNumBarBumps; ++b)
         {
             auto& level = barFlashLevel[static_cast<size_t> (b)];
-            if (pressedSinceLast[static_cast<size_t> (idx (B::BumpBar1) + b)])
+            if (pressedSinceLast[static_cast<size_t> (idx (B::BumpBar1) + b)] || b == autoBumpBar)
             {
                 level = 1.0f;                                         // instant attack
                 barFlashAmount[static_cast<size_t> (b)] = velFromNorm (prm (P::BumpLevel)) / 127.0f;

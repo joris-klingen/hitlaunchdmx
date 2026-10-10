@@ -24,7 +24,7 @@ app is just a different way of holding those notes:
 ```
 Launchpad (MIDI thread) ─┐                 ┌─ XL (MIDI thread)
   pads → latch a note     │                 │  knobs/faders → params (0..1)
-  page / Store / Shift    ▼                 ▼  buttons → momentary/toggle
+  page / looks / auto    ▼                 ▼  buttons → momentary/toggle
                        LiveEngine  (atomics in, one SpinLock for looks)
                            │
          100 Hz tick ──────┤  1. clock: global beats @ BPM; scaled clock =
@@ -76,12 +76,32 @@ Beat-based lengths (bump release, crossfade) scale with it — agreed.
 | Motion page (all-in-one) | cols 1-6: rows 8-7 Chases · 6-5 Breathes · 4-3 Wild (each bank 6 × 2: upper row = notes 0-5, lower 6-11) · cols 7-8, rows 8-3: 12 primary colours (Red, Orange · Yellow, Green · Teal, Cyan · Blue, Violet · Magenta, Pink · Warm white, Cool white) · rows 2-1: 16 Multicolor (Rainbow … Night sky). Picks are `kMotionColours` / `kMotionMulticolor` in `PadLayout.h`. No zones or bar selectors on the Launchpad — all bars always play, the XL faders set their levels |
 | Colour page | rows 8-6 Primary 24 · row 5 + row 4 cols 1-4 Secondary 12 · rows 3-1 Multicolor 24 |
 | Looks pages | 64 looks each (384 total) |
-| Top row | Spot L WW · Spot L col · Spot R WW · Spot R col · Clear · Store · Shift · Blackout |
+| Top row | Spot L WW · Spot L col · Spot R WW · Spot R col · **Auto: Mellow · Groove · Party · Disco** |
 
 Tap a pad → it replaces the rest of its bank (one chase, one primary, …);
-**Shift + tap** adds (recipes combine as in hitnotedmx); tap a lit pad → off.
-**Store** then a look pad → save; **Shift + Store** then a pad → delete; a
-look pad → recall (crossfades if the XL *Crossfade* knob is up).
+**hold a pad and tap another of the same bank** → added (recipes combine as in
+hitnotedmx); tap a lit pad → off. **Tap a look pad** → recall (on release;
+crossfades if the XL *Crossfade* knob is up); **hold it ~0.6 s** → the look on
+stage is stored there. **Hold a page button 1 s** → clear the selection.
+On screen: shift-click = combine, right-click a look = delete. (Blackout is
+on XL top 8.)
+
+**Auto modes** (top row 5–8): each loops through 8 programs from
+`Source/AutoPrograms.h`, switching on the global bar grid. Tap to start, tap
+again to stop (the current program stays on stage), tap another to switch;
+any manual pad or look recall also stops auto. Spots are never touched. The
+XL knobs still shape the recipes.
+
+| Level | Changes every | Transitions | Extra |
+|---|---|---|---|
+| 1 Mellow | 8 bars | 1-bar crossfade, slow colour glide | breathes + calm Multicolor |
+| 2 Groove | 4 bars | shorter crossfade, medium glide | slow chases + breathes |
+| 3 Party | 2 bars | cut | bar bump on every downbeat, sweeping across the bars |
+| 4 Disco | 1 bar | cut | bar bump on every beat, random bar |
+
+The auto crossfade is held only around each change (from ¼ beat before to one
+bar after), so recipes aren't motion-blurred in between; the XL Crossfade / Col
+fade knobs override when set higher.
 
 ### Launch Control XL (Factory template 1, MIDI ch 9)
 
@@ -117,7 +137,8 @@ beyond the grid's bar count do nothing (greyed on screen).
 | File | Role |
 |---|---|
 | `Source/Controls.h` | XL layout: params, buttons, value formatting, factory-template MIDI numbers + LED codes |
-| `Source/PadLayout.h` | Launchpad pages: pad ↔ hitnotedmx note, look slots, bank groups, top buttons |
+| `Source/PadLayout.h` | Launchpad pages: pad ↔ hitnotedmx note, look slots, bank groups, top buttons, hold timings |
+| `Source/AutoPrograms.h` | The four auto levels and their programs (editable table) |
 | `Source/LiveEngine.{h,cpp}` | State (atomics), clock, held-note building, `computeDmx` tick, persistence |
 | `Source/Surfaces.{h,cpp}` | Launchpad + XL MIDI I/O and LED feedback; `describeLaunchpad` / `describeXlButton` shared with the on-screen mirrors |
 | `Source/MainComponent.{h,cpp}` | Window (1460 × 880, sized for a 14" MBP): visualiser, virtual Launchpad, virtual XL panel, devices, grid, tempo, log |
@@ -142,6 +163,10 @@ quarantine flag.
 
 ## Changelog
 
+- **2026-10 — Auto modes:** Launchpad top row 5–8 = Mellow / Groove / Party /
+  Disco auto (program loops on the bar grid, level-dependent transitions and
+  auto bar bumps). Clear / Store / Shift became gestures (hold page button,
+  hold look pad, hold-to-combine); Blackout lives on XL top 8.
 - **2026-10 — XL strip 8 = master column:** Density, Spot dim (Send B 8),
   Strobe Hz (Pan 8), Master dim (fader 8), Blackout (top 8) over Strobe
   (bottom 8). Reverse → bottom 3; Bump all dropped (bar bumps 1–7 remain);

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "AutoPrograms.h"
 #include "LiveEngine.h"
 
 using namespace hitlaunchdmx;
@@ -31,6 +32,13 @@ void run (LiveEngine& e, double seconds)
         now += 0.01;
         e.tick (now);
     }
+}
+
+// A quick pad tap (press + release) at the synthetic time.
+void tapPad (LiveEngine& e, int row, int col)
+{
+    e.padPressed (row, col, now);
+    e.padReleased (row, col, now + 0.05);
 }
 
 // Sum of R, G, B over one bar of the default 4 × 18 rig.
@@ -59,10 +67,10 @@ int main()
 
     // ── Launchpad builder: Chase + Red ──
     e.setViewPage (kPageMotion);
-    e.padPressed (8, 1);                                   // Chases, first pad = Chase
+    tapPad (e, 8, 1);                                 // Chases, first pad = Chase
     check (e.getSel (hitnotedmx::kChasesStart) != 0, "motion pad (8,1) latches Chase (24)");
     e.setViewPage (kPageColour);
-    e.padPressed (8, 2);                                   // Primary #1 = Red (85)
+    tapPad (e, 8, 2);                                 // Primary #1 = Red (85)
     check (e.getSel (hitnotedmx::kPrimaryPaletteStart + 1) != 0, "colour pad (8,2) latches Red (85)");
 
     run (e, 2.0);
@@ -71,14 +79,17 @@ int main()
     check (red > 0.5f, "red chase lights the bars");
     check (other < 1.0e-4f, "red chase emits no green/blue");
 
-    // ── group exclusivity / Shift ──
-    e.padPressed (8, 3);                                   // Orange-red replaces Red
+    // ── group exclusivity / hold-to-combine ──
+    tapPad (e, 8, 3);                                      // Orange-red replaces Red
     check (e.getSel (85) == 0 && e.getSel (86) != 0, "new primary replaces the old one");
-    e.topButton (TopButton::Shift, true);
-    e.padPressed (8, 2);
-    e.topButton (TopButton::Shift, false);
-    check (e.getSel (85) != 0 && e.getSel (86) != 0, "Shift adds to the group");
-    e.padPressed (8, 3);
+    e.padPressed (8, 4, now);                              // hold Orange (replaces Orange-red) …
+    tapPad (e, 8, 2);                                      // … and tap Red while it's held
+    e.padReleased (8, 4, now);
+    check (e.getSel (85) != 0 && e.getSel (87) != 0 && e.getSel (86) == 0, "holding a pad + tapping another adds");
+    tapPad (e, 8, 2);
+    check (e.getSel (85) == 0, "tap without a held pad toggles off");
+    tapPad (e, 8, 2);                                      // Red back on, replacing Orange
+    check (e.getSel (85) != 0 && e.getSel (87) == 0, "tap without a held pad replaces");
     check (e.getSel (86) == 0, "tapping a lit pad unlatches it");
 
     // ── Motion page: colour column (cols 7-8, rows 8-3) + Multicolor rows 2-1 ──
@@ -96,12 +107,12 @@ int main()
                 if (const int p = padPitch (pg, row, col); (p >= 12 && p < 24) || (p >= 5 && p <= 8))
                     noZones = false;
     check (noZones, "no zone or bar-selector pads on the Launchpad");
-    e.padPressed (8, 8);                                   // Orange from the Motion page
+    tapPad (e, 8, 8);                                   // Orange from the Motion page
     check (e.getSel (87) != 0 && e.getSel (85) == 0, "Motion colour replaces the Colour-page primary");
-    e.padPressed (2, 1);                                   // Rainbow
+    tapPad (e, 2, 1);                                   // Rainbow
     check (e.getSel (hitnotedmx::kColorDynStart) != 0, "Motion (2,1) latches Rainbow");
-    e.padPressed (2, 1);                                   // Rainbow off again
-    e.padPressed (8, 7);                                   // Red (Motion page) replaces Orange
+    tapPad (e, 2, 1);                                   // Rainbow off again
+    tapPad (e, 8, 7);                                   // Red (Motion page) replaces Orange
     check (e.getSel (85) != 0 && e.getSel (87) == 0, "Motion Red replaces Motion Orange");
 
     // ── bar fader ──
@@ -135,17 +146,17 @@ int main()
     }
     check (std::abs (e.getBpm() - 120.0) < 6.0, "4 taps 0.5 s apart ≈ 120 BPM");
 
-    // ── blackout (Launchpad top row) ──
-    e.topButton (TopButton::Blackout, true);
-    e.topButton (TopButton::Blackout, false);
+    // ── blackout (XL top 8) ──
+    e.buttonEvent (idx (B::Blackout), true);
+    e.buttonEvent (idx (B::Blackout), false);
     run (e, 0.2);
     {
         float sum = 0;
         for (int ch = 1; ch <= e.getRig().rigChannels(); ++ch) sum += e.getDmxValues().get (ch);
         check (sum < 1.0e-4f, "Blackout toggle kills the rig");
     }
-    e.topButton (TopButton::Blackout, true);
-    e.topButton (TopButton::Blackout, false);
+    e.buttonEvent (idx (B::Blackout), true);
+    e.buttonEvent (idx (B::Blackout), false);
     check (! e.isBlackout(), "Blackout toggles back off");
 
     // ── per-bar bump (XL top row) ──
@@ -164,7 +175,7 @@ int main()
         check (b1.r + b1.g + b1.b + b3.r + b3.g + b3.b < 1.0e-4f, "Bump 2 leaves bars 1 and 3 dark");
 
         e.setViewPage (kPageMotion);
-        e.padPressed (8, 8);                       // Orange held → flash in orange
+        tapPad (e, 8, 8);                       // Orange held → flash in orange
         e.buttonEvent (idx (B::BumpBar4), true);
         e.buttonEvent (idx (B::BumpBar4), false);
         run (e, 0.01);
@@ -199,9 +210,9 @@ int main()
     e.buttonEvent (idx (B::Blackout), true);                 // XL Blackout …
     e.buttonEvent (idx (B::Blackout), false);
     check (e.isBlackout() && e.isButtonOn (idx (B::Blackout)), "XL Blackout sets the shared blackout");
-    e.topButton (TopButton::Blackout, true);                 // … Launchpad clears it
-    e.topButton (TopButton::Blackout, false);
-    check (! e.isBlackout() && ! e.isButtonOn (idx (B::Blackout)), "Launchpad Blackout clears the same state");
+    e.buttonEvent (idx (B::Blackout), true);                 // … and off again
+    e.buttonEvent (idx (B::Blackout), false);
+    check (! e.isBlackout() && ! e.isButtonOn (idx (B::Blackout)), "XL Blackout toggles off");
 
     run (e, 0.3);
     {
@@ -245,13 +256,15 @@ int main()
 
     // ── looks: store + recall ──
     e.setViewPage (kFirstLookPage);
-    e.topButton (TopButton::Store, true);
-    e.topButton (TopButton::Store, false);
-    e.padPressed (8, 1);
-    check (e.lookUsed (0) && e.getActiveLook() == 0, "Store + pad saves look 1");
+    e.padPressed (8, 1, now);
+    e.pollHolds (now + 0.3);
+    check (! e.lookUsed (0), "a short hold on a look pad doesn't store");
+    e.pollHolds (now + kLookHoldSec + 0.05);
+    e.padReleased (8, 1, now + kLookHoldSec + 0.1);
+    check (e.lookUsed (0) && e.getActiveLook() == 0, "holding a look pad stores look 1");
     e.clearSelection();
     check (e.getSel (85) == 0, "Clear empties the selection");
-    e.padPressed (8, 1);
+    tapPad (e, 8, 1);
     check (e.getSel (85) != 0 && e.getSel (hitnotedmx::kChasesStart) != 0, "look pad recalls the stored look");
 
     // ── persistence round-trip ──
@@ -268,6 +281,68 @@ int main()
         e3.fromXml (old);
         check (e3.getSel (6) == 0 && e3.getSel (14) == 0 && e3.getSel (2) != 0 && e3.getSel (85) != 0,
                "loading drops bar selectors + zones, keeps the rest");
+    }
+
+    // ── hold a page button = clear ──
+    e.pageButton (kPageMotion, true, now);
+    e.pollHolds (now + 0.5);
+    check (e.getSel (85) != 0, "a short page press doesn't clear");
+    e.pollHolds (now + kClearHoldSec + 0.05);
+    e.pageButton (kPageMotion, false, now + kClearHoldSec + 0.1);
+    check (e.getSel (85) == 0 && e.getSel (hitnotedmx::kChasesStart) == 0, "holding a page button clears");
+
+    // ── auto modes ──
+    {
+        const auto& lv = autoLevels();
+        const auto holds = [&e] (const AutoProgram& prog)
+        {
+            for (const int n : prog.notes)
+                if (n >= 0 && e.getSel (n) == 0) return false;
+            return true;
+        };
+        e.topButton (TopButton::SpotLWW, true);           // a spot on — auto must keep it
+        e.topButton (TopButton::SpotLWW, false);
+        e.setParam (idx (P::Bpm), normFromBpm (120.0));   // exact (the tap test left ~120)
+        e.restartClock();
+        run (e, 0.02);
+        e.topButton (TopButton::Auto1, true);             // Mellow
+        e.topButton (TopButton::Auto1, false);
+        run (e, 0.05);
+        check (e.getAutoLevel() == 0 && e.getAutoProgram() == 0 && holds (lv[0].programs[0]),
+               "Auto 1 starts Mellow program 1");
+        run (e, lv[0].barsPerProgram * 4 * 0.5 + 0.1);    // 8 bars at 120 BPM
+        check (e.getAutoProgram() == 1 && holds (lv[0].programs[1]) && ! holds (lv[0].programs[0]),
+               "Mellow moves to program 2 after 8 bars");
+        check (e.getSel (kSpotPitch0) != 0, "auto leaves the spots alone");
+
+        e.topButton (TopButton::Auto4, true);             // switch straight to Disco
+        e.topButton (TopButton::Auto4, false);
+        run (e, 0.05);
+        check (e.getAutoLevel() == 3 && holds (lv[3].programs[0]), "Auto 4 switches to Disco program 1");
+        run (e, 4 * 0.5 + 0.1);                           // 1 bar
+        check (e.getAutoProgram() == 1 && holds (lv[3].programs[1]), "Disco changes every bar");
+
+        e.topButton (TopButton::Auto4, true);             // same button again = stop
+        e.topButton (TopButton::Auto4, false);
+        run (e, 0.05);
+        check (e.getAutoLevel() == -1 && holds (lv[3].programs[1]), "same auto button stops, look stays");
+
+        e.topButton (TopButton::Auto3, true);             // Party: Chase + Red, bump each downbeat
+        e.topButton (TopButton::Auto3, false);
+        run (e, 0.05);
+        e.setParam (idx (P::BumpLevel), 1.0f);
+        {
+            // Run up to just past the next downbeat; a full red bar there can
+            // only be the auto bump (the chase lights a few pixels).
+            const double toBar = (4.0 - std::fmod (e.getGlobalBeats(), 4.0)) * 0.5;
+            run (e, toBar + 0.02);
+            float best = 0;
+            for (int b = 0; b < 4; ++b) best = juce::jmax (best, barSum (e, b).r);
+            check (best > 15.0f, "Party fires a bar bump on the downbeat");
+        }
+        e.setViewPage (kPageMotion);
+        tapPad (e, 8, 1);                                 // any manual pad stops auto
+        check (e.getAutoLevel() == -1, "a manual pad stops auto");
     }
 
     std::printf (failures == 0 ? "\nALL OK\n" : "\n%d FAILURE(S)\n", failures);

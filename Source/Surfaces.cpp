@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "AutoPrograms.h"
 #include "Palette.h"             // hitnotedmx
 #include "Recipes.h"             // hitnotedmx
 #include "TriggerVocabulary.h"   // hitnotedmx
@@ -170,10 +171,21 @@ PadView describeLaunchpad (const LiveEngine& e, int row, int col)
                 c = pitchColour (p);
                 break;
             }
-            case TopButton::Clear:    c = juce::Colours::white;          break;
-            case TopButton::Store:    lit = e.isStoreArmed(); c = juce::Colours::red; break;
-            case TopButton::Shift:    lit = e.isShiftHeld();  c = juce::Colours::white; break;
-            case TopButton::Blackout: lit = e.isBlackout(); c = juce::Colours::red; break;
+            case TopButton::Auto1: case TopButton::Auto2:
+            case TopButton::Auto3: case TopButton::Auto4:
+            {
+                // Mellow → Disco: teal, green, orange, magenta.
+                static const juce::Colour autoCol[kNumAutoLevels] {
+                    rgb (0.1f, 0.7f, 0.9f), rgb (0.3f, 1.0f, 0.2f), rgb (1.0f, 0.5f, 0.0f), rgb (1.0f, 0.1f, 0.8f)
+                };
+                const int lvl = col - 5;
+                lit = e.getAutoLevel() == lvl;
+                c = autoCol[lvl];
+                if (lit && e.getAutoProgram() >= 0)
+                    return { c, juce::String (kTopButtonNames[col - 1]) + " " + juce::String (e.getAutoProgram() + 1)
+                                  + "/" + juce::String (autoLevels()[static_cast<size_t> (lvl)].numPrograms), true };
+                break;
+            }
         }
         return { lit ? c : c.withMultipliedBrightness (kIdle), kTopButtonNames[col - 1], lit };
     }
@@ -191,9 +203,10 @@ PadView describeLaunchpad (const LiveEngine& e, int row, int col)
         const bool used   = e.lookUsed (slot);
         const bool active = e.getActiveLook() == slot;
         const auto label  = "Look " + juce::String (slot + 1);
-        if (active)               return { juce::Colours::lime, label, true };
+        const bool held   = e.getHeldLookSlot() == slot;
+        if (active)               return { juce::Colours::lime, label, true };            // on stage / just stored
+        if (held)                 return { juce::Colours::white.withMultipliedBrightness (0.5f), "hold = store", false };
         if (used)                 return { rgb (0.2f, 1.0f, 0.3f).withMultipliedBrightness (0.3f), label, false };
-        if (e.isStoreArmed())     return { juce::Colours::red.withMultipliedBrightness (0.18f), {}, false };
         return { juce::Colours::black, {}, false };
     }
 
@@ -295,10 +308,18 @@ void LaunchpadSurface::handleIncomingMidiMessage (juce::MidiInput*, const juce::
 {
     log.add ("LP  " + describeMsg (m));
 
+    // Pads: note on = press, note off / velocity-0 note on = release (the
+    // release drives look recall-vs-store and the hold-to-combine chord).
     if (m.isNoteOn())
     {
         const int n = m.getNoteNumber();
         engine.padPressed (n / 10, n % 10);
+        return;
+    }
+    if (m.isNoteOff())
+    {
+        const int n = m.getNoteNumber();
+        engine.padReleased (n / 10, n % 10);
         return;
     }
     if (! m.isController())
@@ -308,8 +329,8 @@ void LaunchpadSurface::handleIncomingMidiMessage (juce::MidiInput*, const juce::
     const bool down = m.getControllerValue() > 0;
     if (cc >= 91 && cc <= 98)
         engine.topButton (static_cast<TopButton> (cc - 91), down);
-    else if (cc % 10 == 9 && cc >= 19 && cc <= 89 && down)
-        engine.setViewPage (8 - cc / 10);
+    else if (cc % 10 == 9 && cc >= 19 && cc <= 89)
+        engine.pageButton (8 - cc / 10, down);   // hold 1 s = clear
 }
 
 void LaunchpadSurface::refreshLeds()

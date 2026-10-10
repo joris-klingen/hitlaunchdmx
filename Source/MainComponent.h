@@ -23,7 +23,7 @@ public:
 
 // On-screen Launchpad Mini MK3: the 8×8 grid + top round buttons + right-hand
 // page buttons, drawn from describeLaunchpad() — an exact mirror of the
-// hardware LEDs, and clickable (shift-click = Shift held).
+// hardware LEDs, and clickable (shift-click = combine, right-click a look = delete).
 class VirtualLaunchpad : public juce::Component
 {
 public:
@@ -38,7 +38,7 @@ private:
     std::pair<int, int>    cellAt (juce::Point<float>) const;
 
     LiveEngine& engine;
-    int  pressedTop = -1;         // top button held by the mouse (for release)
+    int  pressedRow = -1, pressedCol = -1;   // cell held by the mouse (for its release)
     bool mouseShift = false;
 };
 

@@ -136,28 +136,40 @@ void VirtualLaunchpad::mouseDown (const juce::MouseEvent& e)
     if (row < 0)
         return;
 
-    mouseShift = e.mods.isShiftDown();
-    if (mouseShift)
-        engine.topButton (TopButton::Shift, true);
-
-    if (col == 9 && row <= 8)
-        engine.setViewPage (8 - row);
-    else if (row == 9 && col <= 8)
+    // Right-click a stored look = delete it (on-screen only).
+    if (e.mods.isPopupMenu())
     {
-        pressedTop = col - 1;
-        engine.topButton (static_cast<TopButton> (pressedTop), true);
+        if (row <= 8 && col <= 8)
+            engine.deleteLook (padLook (engine.getViewPage(), row, col));
+        return;
     }
+
+    mouseShift = e.mods.isShiftDown();       // shift-click = combine within a bank
+    if (mouseShift)
+        engine.setShiftHeld (true);
+
+    pressedRow = row;
+    pressedCol = col;
+    if (col == 9 && row <= 8)
+        engine.pageButton (8 - row, true);   // hold 1 s = clear
+    else if (row == 9 && col <= 8)
+        engine.topButton (static_cast<TopButton> (col - 1), true);
     else if (row <= 8 && col <= 8)
-        engine.padPressed (row, col);
+        engine.padPressed (row, col);        // hold a look pad = store
 }
 
 void VirtualLaunchpad::mouseUp (const juce::MouseEvent&)
 {
-    if (pressedTop >= 0)
-        engine.topButton (static_cast<TopButton> (pressedTop), false);
-    pressedTop = -1;
+    const int row = pressedRow, col = pressedCol;
+    pressedRow = pressedCol = -1;
+    if (row > 0)
+    {
+        if (col == 9 && row <= 8)       engine.pageButton (8 - row, false);
+        else if (row == 9 && col <= 8)  engine.topButton (static_cast<TopButton> (col - 1), false);
+        else                            engine.padReleased (row, col);
+    }
     if (mouseShift)
-        engine.topButton (TopButton::Shift, false);
+        engine.setShiftHeld (false);
     mouseShift = false;
 }
 
@@ -444,6 +456,8 @@ void MainComponent::timerCallback()
         virtualLaunchpad.repaint();
     }
     lastPadSerial = padSerial;
+    engine.pollHolds();   // long-press store (look pads) / clear (page buttons)
+
     if (serial != lastSerial || blink != lastTapBlink)
     {
         xlSurface.refreshLeds();

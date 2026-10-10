@@ -139,10 +139,19 @@ inline int pitchGroup (int p) noexcept
 }
 
 
-// Top round buttons (CC 91..98).
-enum class TopButton : int { SpotLWW = 0, SpotLCol, SpotRWW, SpotRCol, Clear, Store, Shift, Blackout };
+// Top round buttons (CC 91..98): the four spot toggles, then the four auto
+// modes (see AutoPrograms.h).
+enum class TopButton : int { SpotLWW = 0, SpotLCol, SpotRWW, SpotRCol, Auto1, Auto2, Auto3, Auto4 };
 inline constexpr const char* kTopButtonNames[8] {
-    "Spot L WW", "Spot L col", "Spot R WW", "Spot R col", "Clear", "Store", "Shift", "Blackout"
+    "Spot L WW", "Spot L col", "Spot R WW", "Spot R col", "Mellow", "Groove", "Party", "Disco"
 };
+
+// Gestures that replace the old Clear / Store / Shift buttons:
+//   • combine: hold a pad and tap another of the same bank → added, not replaced
+//   • store:   hold a look pad ≥ kLookHoldSec → the look on stage is saved there
+//              (a shorter tap recalls it, on release)
+//   • clear:   hold a page button ≥ kClearHoldSec → clear the selection
+inline constexpr double kLookHoldSec  = 0.6;
+inline constexpr double kClearHoldSec = 1.0;
 
 }  // namespace hitlaunchdmx
