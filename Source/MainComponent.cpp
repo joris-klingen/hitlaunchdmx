@@ -1,479 +1,582 @@
 #include "MainComponent.h"
-#include "Scene.h"
 
 #include <cmath>
 
 namespace hitlaunchdmx
 {
 
-// ============================================================================
-// DimKnobLookAndFeel  (adapted from hitnotedmx)
-// ============================================================================
-void DimKnobLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width,
-                                          int height, float sliderPos,
-                                          float rotaryStartAngle, float rotaryEndAngle,
-                                          juce::Slider& s)
+namespace
 {
-    auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
-                                         static_cast<float>(width), static_cast<float>(height))
-                      .reduced(4.0f);
+const juce::Colour kBg       { 0xff1e1e1e };
+const juce::Colour kPanel    { 0xff262626 };
+const juce::Colour kText     { 0xffd8d8d8 };
+const juce::Colour kDimText  { 0xff8a8a8a };
+const juce::Colour kPink     { 0xffff4fa3 };
+
+// Knob accent per XL row (matches the XL's own knob-row LED colours loosely).
+const juce::Colour kRowAccent[4] { juce::Colour (0xfff2a93b), juce::Colour (0xff39c6c0),
+                                   juce::Colour (0xff8ad13b), juce::Colour (0xffc06bd1) };
+}  // namespace
+
+// ============================================================================
+// DimKnobLookAndFeel (adapted from hitnotedmx)
+// ============================================================================
+void DimKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width,
+                                           int height, float sliderPos,
+                                           float rotaryStartAngle, float rotaryEndAngle,
+                                           juce::Slider& s)
+{
+    auto bounds = juce::Rectangle<float> (static_cast<float> (x), static_cast<float> (y),
+                                          static_cast<float> (width), static_cast<float> (height))
+                      .reduced (3.0f);
     const auto  centre = bounds.getCentre();
-    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
-    const float lineW  = juce::jmax(3.0f, radius * 0.18f);
+    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 2.0f;
+    const float lineW  = juce::jmax (3.0f, radius * 0.18f);
     const float arcR   = radius - lineW * 0.5f;
     const float angle  = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    const auto  accent = s.findColour(juce::Slider::rotarySliderFillColourId);
+    const auto  accent = s.isEnabled() ? s.findColour (juce::Slider::rotarySliderFillColourId)
+                                       : juce::Colour (0xff444444);
 
-    // Background track.
     juce::Path track;
-    track.addCentredArc(centre.x, centre.y, arcR, arcR, 0.0f,
-                        rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour(juce::Colour(0xff3a3a3a));
-    g.strokePath(track, juce::PathStrokeType(lineW, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded));
+    track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (juce::Colour (0xff3a3a3a));
+    g.strokePath (track, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    // Filled value arc.
-    if (sliderPos > 0.0f)
+    if (sliderPos > 0.0f && s.isEnabled())
     {
         juce::Path value;
-        value.addCentredArc(centre.x, centre.y, arcR, arcR, 0.0f,
-                            rotaryStartAngle, angle, true);
-        g.setColour(accent);
-        g.strokePath(value, juce::PathStrokeType(lineW, juce::PathStrokeType::curved,
-                                                 juce::PathStrokeType::rounded));
+        value.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
+        g.setColour (accent);
+        g.strokePath (value, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // Knob body with a subtle radial shade.
     const float bodyR = radius - lineW - 2.0f;
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff343434), centre.x, centre.y - bodyR,
-                                           juce::Colour(0xff202020), centre.x, centre.y + bodyR,
-                                           false));
-    g.fillEllipse(centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-    g.setColour(accent.withAlpha(0.5f));
-    g.drawEllipse(centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff343434), centre.x, centre.y - bodyR,
+                                             juce::Colour (0xff202020), centre.x, centre.y + bodyR, false));
+    g.fillEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
+    g.setColour (accent.withAlpha (0.5f));
+    g.drawEllipse (centre.x - bodyR, centre.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.0f);
 
-    // Pointer.
+    if (! s.isEnabled())
+        return;
+
     juce::Path pointer;
-    const float thick = juce::jmax(2.0f, bodyR * 0.14f);
+    const float thick = juce::jmax (2.0f, bodyR * 0.14f);
     const float len   = bodyR * 0.82f;
-    pointer.addRoundedRectangle(-thick * 0.5f, -len, thick, len * 0.62f, thick * 0.5f);
-    pointer.applyTransform(juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-    g.setColour(juce::Colours::white);
-    g.fillPath(pointer);
+    pointer.addRoundedRectangle (-thick * 0.5f, -len, thick, len * 0.62f, thick * 0.5f);
+    pointer.applyTransform (juce::AffineTransform::rotation (angle).translated (centre.x, centre.y));
+    g.setColour (juce::Colours::white);
+    g.fillPath (pointer);
 }
 
 // ============================================================================
 // VirtualLaunchpad
 // ============================================================================
-
-VirtualLaunchpad::VirtualLaunchpad(SceneEngine& eng) : engine(eng)
+juce::Rectangle<float> VirtualLaunchpad::cellBounds (int row, int col) const
 {
-    setOpaque(true);
+    // 9 × 9 lattice: visual row 0 = top round buttons (row 9), visual col 8 =
+    // the page column (col 9). A small gutter separates the edge buttons.
+    const float side   = static_cast<float> (juce::jmin (getWidth(), getHeight()));
+    const float gutter = side * 0.02f;
+    const float cell   = (side - gutter) / 9.0f;
+    const int   vRow   = 9 - row;
+    const int   vCol   = col - 1;
+    const float x = vCol * cell + (col == 9 ? gutter : 0.0f);
+    const float y = vRow * cell + (row == 9 ? 0.0f : gutter);
+    return { x, y, cell, cell };
 }
 
-juce::Rectangle<float> VirtualLaunchpad::cellBoundsF(int vRow, int vCol) const
+std::pair<int, int> VirtualLaunchpad::cellAt (juce::Point<float> pt) const
 {
-    const float padW = static_cast<float>(getWidth())  / 8.0f;
-    const float padH = static_cast<float>(getHeight()) / 8.0f;
-    return { vCol * padW + 1.5f, vRow * padH + 1.5f, padW - 3.0f, padH - 3.0f };
+    for (int row = 1; row <= 9; ++row)
+        for (int col = 1; col <= 9; ++col)
+            if (cellBounds (row, col).contains (pt))
+                return { row, col };
+    return { -1, -1 };
 }
 
-int VirtualLaunchpad::cellForPoint(juce::Point<int> pt) const
+void VirtualLaunchpad::paint (juce::Graphics& g)
 {
-    const float padW = static_cast<float>(getWidth())  / 8.0f;
-    const float padH = static_cast<float>(getHeight()) / 8.0f;
-    const int vCol = juce::jlimit(0, 7, static_cast<int>(pt.x / padW));
-    const int vRow = juce::jlimit(0, 7, static_cast<int>(pt.y / padH));
-    return flatForCell(vRow, vCol);   // FLAT index
-}
+    const float side = static_cast<float> (juce::jmin (getWidth(), getHeight()));
+    g.setColour (juce::Colour (0xff111111));
+    g.fillRoundedRectangle (0.0f, 0.0f, side, side, 8.0f);
 
-void VirtualLaunchpad::paint(juce::Graphics& g)
-{
-    g.fillAll(juce::Colour(0xff111111));
-
-    for (int vRow = 0; vRow < 8; ++vRow)
-    {
-        for (int vCol = 0; vCol < 8; ++vCol)
+    for (int row = 1; row <= 9; ++row)
+        for (int col = 1; col <= 9; ++col)
         {
-            const int sceneIdx = flatForCell(vRow, vCol);   // flat
-            const auto& sc     = kScenes[static_cast<size_t>(sceneIdx)];
-            const auto  bounds = cellBoundsF(vRow, vCol);
-            const bool  active  = (sceneIdx == activeScene);
-            const bool  hovered = (sceneIdx == hoveredScene);
+            const auto view = describeLaunchpad (engine, row, col);
+            const auto r    = cellBounds (row, col).reduced (3.0f);
+            const bool edge = row == 9 || col == 9;
 
-            // Pad colour from the scene's dominant colour. Dim when idle so
-            // the active/hover pad stands out; floor very dark colours so the
-            // pad stays visible behind the label.
-            const float mul  = active ? 1.0f : (hovered ? 0.65f : 0.38f);
-            const float base = 0.05f;  // faint floor so black-ish pads read
-            const float pr = juce::jlimit(0.0f, 1.0f, sc.color1.r * mul + base);
-            const float pg = juce::jlimit(0.0f, 1.0f, sc.color1.g * mul + base);
-            const float pb = juce::jlimit(0.0f, 1.0f, sc.color1.b * mul + base);
-            g.setColour(juce::Colour::fromFloatRGBA(pr, pg, pb, 1.0f));
-            g.fillRoundedRectangle(bounds, 3.0f);
+            g.setColour (view.colour.getBrightness() < 0.02f ? juce::Colour (0xff1c1c1c) : view.colour);
+            if (edge) g.fillEllipse (r.reduced (r.getWidth() * 0.12f));
+            else      g.fillRoundedRectangle (r, 4.0f);
 
-            // Active border
-            if (active)
+            if (view.lit && ! edge)
             {
-                g.setColour(juce::Colours::white.withAlpha(0.9f));
-                g.drawRoundedRectangle(bounds, 3.0f, 2.0f);
-            }
-            else if (hovered)
-            {
-                g.setColour(juce::Colours::white.withAlpha(0.35f));
-                g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.85f));
+                g.drawRoundedRectangle (r, 4.0f, 1.5f);
             }
 
-            // Scene name text — pick black or white for contrast against the pad.
-            const float lum = 0.299f * pr + 0.587f * pg + 0.114f * pb;
-            const juce::Colour textCol = (lum > 0.55f) ? juce::Colours::black : juce::Colours::white;
-            g.setColour(textCol.withAlpha(active ? 1.0f : 0.92f));
-            g.setFont(juce::FontOptions(10.5f));
-            g.drawFittedText(sc.name, bounds.toNearestInt().reduced(2),
-                             juce::Justification::centred, 3, 0.8f);
+            if (view.label.isNotEmpty())
+            {
+                const bool brightBg = view.colour.getPerceivedBrightness() > 0.55f;
+                g.setColour (brightBg ? juce::Colours::black : juce::Colours::white.withAlpha (0.85f));
+                g.setFont (juce::FontOptions (edge ? juce::jlimit (7.0f, 10.0f, r.getWidth() * 0.14f)
+                                                   : juce::jlimit (8.0f, 12.0f, r.getWidth() * 0.17f)));
+                g.drawFittedText (view.label, r.reduced (edge ? 4.0f : 2.0f).toNearestInt(),
+                                  juce::Justification::centred, 3, 0.8f);
+            }
         }
-    }
 }
 
-void VirtualLaunchpad::mouseDown(const juce::MouseEvent& e)
+void VirtualLaunchpad::mouseDown (const juce::MouseEvent& e)
 {
-    const int idx = cellForPoint(e.getPosition());   // flat
-    if (idx >= 0 && idx < kTotalScenes)
+    const auto [row, col] = cellAt (e.position);
+    if (row < 0)
+        return;
+
+    // Right-click a stored look = delete it (on-screen only).
+    if (e.mods.isPopupMenu())
     {
-        activeScene = idx;
-        engine.setActiveScene(idx);
-        repaint();
+        if (row <= 8 && col <= 8)
+            engine.deleteLook (padLook (engine.getViewPage(), row, col));
+        return;
     }
+
+    mouseShift = e.mods.isShiftDown();       // shift-click = combine within a bank
+    if (mouseShift)
+        engine.setShiftHeld (true);
+
+    pressedRow = row;
+    pressedCol = col;
+    if (col == 9 && row <= 8)
+        engine.pageButton (8 - row, true);   // hold 1 s = clear
+    else if (row == 9 && col <= 8)
+        engine.topButton (static_cast<TopButton> (col - 1), true);
+    else if (row <= 8 && col <= 8)
+        engine.padPressed (row, col);        // hold a look pad = store
 }
 
-void VirtualLaunchpad::mouseMove(const juce::MouseEvent& e)
+void VirtualLaunchpad::mouseUp (const juce::MouseEvent&)
 {
-    const int idx = cellForPoint(e.getPosition());
-    if (idx != hoveredScene)
+    const int row = pressedRow, col = pressedCol;
+    pressedRow = pressedCol = -1;
+    if (row > 0)
     {
-        hoveredScene = idx;
-        repaint();
+        if (col == 9 && row <= 8)       engine.pageButton (8 - row, false);
+        else if (row == 9 && col <= 8)  engine.topButton (static_cast<TopButton> (col - 1), false);
+        else                            engine.padReleased (row, col);
+    }
+    if (mouseShift)
+        engine.setShiftHeld (false);
+    mouseShift = false;
+}
+
+// ============================================================================
+// XlPanel
+// ============================================================================
+XlPanel::XlPanel (LiveEngine& e, juce::LookAndFeel& knobLnf) : engine (e)
+{
+    for (int p = 0; p < kNumParams; ++p)
+    {
+        auto& s = controls[static_cast<size_t> (p)];
+        const bool fader = p >= kFaderParam0;
+        s.setSliderStyle (fader ? juce::Slider::LinearVertical : juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+        s.setRange (0.0, 1.0, 0.0);
+        s.setValue (engine.getParam (p), juce::dontSendNotification);
+        s.setColour (juce::Slider::rotarySliderFillColourId, kRowAccent[p / kNumStrips]);
+        s.setColour (juce::Slider::trackColourId, kRowAccent[3]);
+        s.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff3a3a3a));
+        s.setColour (juce::Slider::thumbColourId, juce::Colours::white);
+        if (! fader) s.setLookAndFeel (&knobLnf);
+        s.setEnabled (kParamDefs[static_cast<size_t> (p)].used);
+        s.setDoubleClickReturnValue (true, kParamDefs[static_cast<size_t> (p)].deflt);
+        s.onValueChange = [this, p] { engine.setParam (p, static_cast<float> (controls[static_cast<size_t> (p)].getValue())); };
+        addAndMakeVisible (s);
+
+        auto& n = names[static_cast<size_t> (p)];
+        n.setText (kParamDefs[static_cast<size_t> (p)].used ? kParamDefs[static_cast<size_t> (p)].name : "", juce::dontSendNotification);
+        n.setJustificationType (juce::Justification::centred);
+        n.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        n.setColour (juce::Label::textColourId, kText);
+        addAndMakeVisible (n);
+
+        auto& v = values[static_cast<size_t> (p)];
+        v.setJustificationType (juce::Justification::centred);
+        v.setFont (juce::FontOptions (10.0f));
+        v.setColour (juce::Label::textColourId, kRowAccent[p / kNumStrips]);
+        addAndMakeVisible (v);
+    }
+
+    for (int b = 0; b < kNumButtons; ++b)
+    {
+        buttons.push_back (std::make_unique<XlButton> (engine, b));
+        addAndMakeVisible (*buttons.back());
+    }
+    sync();
+}
+
+XlPanel::~XlPanel()
+{
+    for (auto& s : controls)
+        s.setLookAndFeel (nullptr);
+}
+
+void XlPanel::XlButton::paint (juce::Graphics& g)
+{
+    const auto view = describeXlButton (engine, index);
+    const auto r    = getLocalBounds().toFloat().reduced (2.0f);
+    g.setColour (view.colour);
+    g.fillRoundedRectangle (r, 3.0f);
+    g.setColour (view.colour.getPerceivedBrightness() > 0.5f ? juce::Colours::black : kText);
+    g.setFont (juce::FontOptions (11.0f, view.lit ? juce::Font::bold : juce::Font::plain));
+    g.drawFittedText (view.label, r.toNearestInt().reduced (2), juce::Justification::centred, 2);
+}
+
+void XlPanel::paint (juce::Graphics& g)
+{
+    g.setColour (juce::Colour (0xff161616));
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
+
+    g.setColour (kDimText);
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.drawText ("LAUNCH CONTROL XL  ·  factory template 1", getLocalBounds().reduced (12, 6).removeFromTop (16),
+                juce::Justification::centredLeft);
+
+    // Strip separators + numbers; strip 8 is the master column, tinted.
+    const int stripW = stripsArea.getWidth() / kNumStrips;
+    g.setColour (juce::Colour (0xff221a20));
+    g.fillRoundedRectangle (juce::Rectangle<int> (stripsArea.getX() + (kNumStrips - 1) * stripW, stripsArea.getY() - 4,
+                                                  stripW, stripsArea.getHeight() + 6).toFloat(), 6.0f);
+    for (int i = 0; i < kNumStrips; ++i)
+    {
+        const int x = stripsArea.getX() + i * stripW;
+        g.setColour (juce::Colour (0xff222222));
+        if (i > 0) g.fillRect (x, stripsArea.getY(), 1, stripsArea.getHeight());
+        const bool master = i == kNumStrips - 1;
+        g.setColour (master ? kPink : kDimText);
+        g.setFont (juce::FontOptions (11.0f, master ? juce::Font::bold : juce::Font::plain));
+        g.drawText (master ? juce::String ("MASTER") : juce::String (i + 1),
+                    x, stripsArea.getBottom() - 14, stripW, 14, juce::Justification::centred);
     }
 }
 
-void VirtualLaunchpad::mouseExit(const juce::MouseEvent&)
+void XlPanel::resized()
 {
-    hoveredScene = -1;
-    repaint();
+    auto area = getLocalBounds().reduced (10);
+    area.removeFromTop (20);
+    stripsArea = area;
+
+    const int stripW  = area.getWidth() / kNumStrips;
+    const int knobRow = juce::jmin (88, (area.getHeight() - 14) * 22 / 100);
+    const int btnH    = 26;
+    const int faderH  = area.getHeight() - 3 * knobRow - 2 * (btnH + 4) - 14;
+
+    for (int i = 0; i < kNumStrips; ++i)
+    {
+        auto strip = juce::Rectangle<int> (area.getX() + i * stripW, area.getY(), stripW, area.getHeight()).reduced (6, 0);
+
+        for (int row = 0; row < kNumKnobRows; ++row)
+        {
+            auto cell = strip.removeFromTop (knobRow);
+            const int p = row * kNumStrips + i;
+            names [static_cast<size_t> (p)].setBounds (cell.removeFromTop (14));
+            values[static_cast<size_t> (p)].setBounds (cell.removeFromBottom (13));
+            controls[static_cast<size_t> (p)].setBounds (cell);
+        }
+
+        auto faderCell = strip.removeFromTop (faderH);
+        const int fp = kFaderParam0 + i;
+        names [static_cast<size_t> (fp)].setBounds (faderCell.removeFromTop (14));
+        values[static_cast<size_t> (fp)].setBounds (faderCell.removeFromBottom (13));
+        controls[static_cast<size_t> (fp)].setBounds (faderCell.withSizeKeepingCentre (36, faderCell.getHeight()));
+
+        strip.removeFromTop (4);
+        buttons[static_cast<size_t> (i)]->setBounds (strip.removeFromTop (btnH));
+        strip.removeFromTop (4);
+        buttons[static_cast<size_t> (kNumStrips + i)]->setBounds (strip.removeFromTop (btnH));
+    }
+}
+
+void XlPanel::sync()
+{
+    const int bars = engine.getRig().cols;
+    for (int p = 0; p < kNumParams; ++p)
+    {
+        auto& s = controls[static_cast<size_t> (p)];
+        const float v = engine.getParam (p);
+        if (! s.isMouseButtonDown() && std::abs (s.getValue() - v) > 1.0e-4)
+            s.setValue (v, juce::dontSendNotification);
+
+        // Bar faders beyond the grid's bar count do nothing — grey them out
+        // (the master fader is always live).
+        if (p >= kFaderParam0)
+        {
+            const bool live = p == idx (P::LedMaster) || p - kFaderParam0 < bars;
+            s.setEnabled (live);
+            names[static_cast<size_t> (p)].setColour (juce::Label::textColourId, live ? kText : kDimText.darker());
+        }
+        values[static_cast<size_t> (p)].setText (formatParam (p, v), juce::dontSendNotification);
+    }
+    for (auto& b : buttons)
+        b->repaint();
 }
 
 // ============================================================================
 // MainComponent
 // ============================================================================
-
 MainComponent::MainComponent()
-    : engine(dmx, liveFrame, midiLog, 2.0f),
-      visualizer(liveFrame, 0),
-      virtualLaunchpad(engine)
 {
-    setSize(1160, 700);
+    setSize (1460, 880);
 
-    // ── left panel ────────────────────────────────────────────────────────
-    addAndMakeVisible(midiInLabel);
-    addAndMakeVisible(midiInCombo);
-    addAndMakeVisible(midiOutLabel);
-    addAndMakeVisible(midiOutCombo);
+    addAndMakeVisible (visualizer);
+    addAndMakeVisible (virtualLaunchpad);
+    addAndMakeVisible (xlPanel);
 
-    addAndMakeVisible(connectBtn);
-    connectBtn.onClick = [this] { connectDmx(); };
-
-    addAndMakeVisible(disconnectBtn);
-    disconnectBtn.onClick = [this] { disconnectDmx(); };
-
-    addAndMakeVisible(blackoutBtn);
-    blackoutBtn.setClickingTogglesState(true);
-    blackoutBtn.onClick = [this] {
-        blackoutActive = blackoutBtn.getToggleState();
-        dmx.setBlackout(blackoutActive);
-    };
-
-    addAndMakeVisible(lpModeBtn);
-    lpModeBtn.onClick = [this] {
-        engine.sendLaunchpadProgrammerMode();
-        engine.refreshLaunchpadLEDs();
-    };
-
-    addAndMakeVisible(dmxStatusLabel);
-    dmxStatusLabel.setJustificationType(juce::Justification::topLeft);
-    dmxStatusLabel.setFont(juce::FontOptions(11.0f));
-
-    addAndMakeVisible(midiLogEditor);
-    midiLogEditor.setMultiLine(true);
-    midiLogEditor.setReadOnly(true);
-    midiLogEditor.setScrollbarsShown(true);
-    midiLogEditor.setFont(juce::Font(juce::FontOptions(
-        juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
-
-    // ── centre visualiser ─────────────────────────────────────────────────
-    addAndMakeVisible(visualizer);
-
-    // ── right: page tabs + virtual launchpad ──────────────────────────────
-    for (int p = 0; p < kNumPages; ++p)
+    // ── DMX ──
+    addAndMakeVisible (dmxButton);
+    dmxButton.onClick = [this]
     {
-        auto& tab = pageTabs[static_cast<size_t>(p)];
-        tab.setButtonText("Page " + juce::String(p + 1));
-        tab.setClickingTogglesState(true);
-        tab.setRadioGroupId(1001);
-        tab.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff3a6ea5));
-        tab.setToggleState(p == 0, juce::dontSendNotification);
-        tab.onClick = [this, p] {
-            engine.setViewPage(p);
-            virtualLaunchpad.setViewPage(p);
-        };
-        addAndMakeVisible(tab);
+        if (dmx.isRunning()) dmx.disconnect();
+        else                 dmx.connect();
+    };
+    addAndMakeVisible (dmxStatus);
+    dmxStatus.setFont (juce::FontOptions (11.0f));
+    dmxStatus.setJustificationType (juce::Justification::topLeft);
+    dmxStatus.setColour (juce::Label::textColourId, kDimText);
+
+    // ── MIDI devices ──
+    for (auto* l : { &lpLabel, &xlLabel, &gridLabel })
+    {
+        l->setFont (juce::FontOptions (11.0f));
+        l->setColour (juce::Label::textColourId, kDimText);
+        addAndMakeVisible (*l);
     }
-
-    addAndMakeVisible(virtualLaunchpad);
-
-    // ── four performance pots (left panel bottom) ─────────────────────────
-    auto setUpKnob = [this](juce::Slider& s, juce::Label& lab,
-                            const juce::String& text, juce::Colour accent)
+    for (auto* c : { &lpIn, &lpOut, &xlIn, &xlOut })
     {
-        s.setLookAndFeel(&knobLnf);
-        s.setColour(juce::Slider::rotarySliderFillColourId, accent);
-        s.setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
-        s.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 56, 16);
-        addAndMakeVisible(s);
+        addAndMakeVisible (*c);
+        c->onChange = [this] { openSurfacesFromCombos(); };
+    }
+    addAndMakeVisible (rescanButton);
+    rescanButton.onClick = [this] { rescanDevices(); };
 
-        lab.setText(text, juce::dontSendNotification);
-        lab.setJustificationType(juce::Justification::centred);
-        lab.setFont(juce::FontOptions(9.0f));
-        lab.setColour(juce::Label::textColourId, juce::Colour(0xffbbbbbb));
-        addAndMakeVisible(lab);
+    // ── grid ──
+    for (int c = 1; c <= hitnotedmx::kMaxBars; ++c) gridCols.addItem (juce::String (c), c);
+    for (int r = 1; r <= hitnotedmx::kMaxRows; ++r) gridRows.addItem (juce::String (r), r);
+    addAndMakeVisible (gridCols);
+    addAndMakeVisible (gridRows);
+    addAndMakeVisible (gridSet);
+    gridSet.onClick = [this]
+    {
+        const auto rig = engine.setGridShape (gridCols.getSelectedId(), gridRows.getSelectedId());
+        gridCols.setSelectedId (rig.cols, juce::dontSendNotification);
+        gridRows.setSelectedId (rig.rows, juce::dontSendNotification);
     };
 
-    setUpKnob(dimSlider,   dimLabel,   "DIM",   juce::Colour(0xfff2a93b));
-    dimSlider.setRange(0.0, 100.0, 1.0);
-    dimSlider.setValue(100.0);
-    dimSlider.setTextValueSuffix("%");
-    dimSlider.onValueChange = [this] {
-        engine.setGlobalDim(static_cast<float>(dimSlider.getValue()) / 100.0f);
-    };
+    // ── tempo + log ──
+    addAndMakeVisible (tempoLabel);
+    tempoLabel.setFont (juce::FontOptions (22.0f, juce::Font::bold));
+    tempoLabel.setColour (juce::Label::textColourId, kText);
+    tempoLabel.setJustificationType (juce::Justification::centredLeft);
 
-    setUpKnob(tailSlider,  tailLabel,  "TAIL",  juce::Colour(0xff39c6c0));
-    tailSlider.setRange(0.0, 200.0, 1.0);
-    tailSlider.setValue(100.0);
-    tailSlider.setTextValueSuffix("%");
-    tailSlider.onValueChange = [this] {
-        engine.setTailScale(static_cast<float>(tailSlider.getValue()) / 100.0f);
-    };
+    addAndMakeVisible (logView);
+    logView.setMultiLine (true);
+    logView.setReadOnly (true);
+    logView.setScrollbarsShown (true);
+    logView.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
+    logView.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff161616));
+    logView.setColour (juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
 
-    setUpKnob(speedSlider, speedLabel, "SPEED", juce::Colour(0xff8ad13b));
-    speedSlider.setRange(10.0, 300.0, 1.0);
-    speedSlider.setValue(100.0);
-    speedSlider.setTextValueSuffix("%");
-    speedSlider.onValueChange = [this] {
-        engine.setSpeedScale(static_cast<float>(speedSlider.getValue()) / 100.0f);
-    };
+    loadState();
+    const auto rig = engine.getRig();
+    gridCols.setSelectedId (rig.cols, juce::dontSendNotification);
+    gridRows.setSelectedId (rig.rows, juce::dontSendNotification);
 
-    setUpKnob(xfadeSlider, xfadeLabel, "XFADE", juce::Colour(0xffc06bd1));
-    xfadeSlider.setRange(0.0, 5.0, 0.1);
-    xfadeSlider.setValue(2.0);
-    xfadeSlider.setTextValueSuffix("s");
-    xfadeSlider.onValueChange = [this] {
-        engine.setCrossfadeSec(static_cast<float>(xfadeSlider.getValue()));
-    };
-
-    buildMidiDeviceMenus();
+    rescanDevices();
     engine.start();
-    startTimerHz(15);
+    startTimerHz (30);
 }
 
 MainComponent::~MainComponent()
 {
     stopTimer();
+    saveState();
+    launchpad.close();
+    xlSurface.close();
     engine.stop();
     dmx.disconnect();
-
-    // Detach custom LnF before the sliders are destroyed.
-    dimSlider.setLookAndFeel(nullptr);
-    tailSlider.setLookAndFeel(nullptr);
-    speedSlider.setLookAndFeel(nullptr);
-    xfadeSlider.setLookAndFeel(nullptr);
 }
 
-void MainComponent::buildMidiDeviceMenus()
+void MainComponent::rescanDevices()
 {
-    midiInCombo.clear(juce::dontSendNotification);
-    midiOutCombo.clear(juce::dontSendNotification);
-
-    int id = 1;
-    for (const auto& name : engine.getMidiInputNames())
-        midiInCombo.addItem(name, id++);
-
-    id = 1;
-    for (const auto& name : engine.getMidiOutputNames())
-        midiOutCombo.addItem(name, id++);
-
-    // Auto-select Launchpad if present
-    for (int i = 0; i < midiInCombo.getNumItems(); ++i)
-        if (midiInCombo.getItemText(i).containsIgnoreCase("Launchpad"))
-        {
-            midiInCombo.setSelectedItemIndex(i, juce::dontSendNotification);
-            engine.openMidiInput(midiInCombo.getItemText(i));
-        }
-
-    for (int i = 0; i < midiOutCombo.getNumItems(); ++i)
-        if (midiOutCombo.getItemText(i).containsIgnoreCase("Launchpad"))
-        {
-            midiOutCombo.setSelectedItemIndex(i, juce::dontSendNotification);
-            engine.openMidiOutput(midiOutCombo.getItemText(i));
-        }
-
-    midiInCombo.onChange = [this] {
-        const int idx = midiInCombo.getSelectedItemIndex();
-        if (idx >= 0) engine.openMidiInput(midiInCombo.getItemText(idx));
+    const auto fill = [] (juce::ComboBox& box, const juce::Array<juce::MidiDeviceInfo>& devs, const juce::String& pick)
+    {
+        const auto current = box.getText();
+        box.clear (juce::dontSendNotification);
+        box.addItem ("(none)", 1);
+        int id = 2;
+        for (const auto& d : devs)
+            box.addItem (d.name, id++);
+        const auto want = current.isNotEmpty() && current != "(none)" ? current : pick;
+        box.setSelectedId (1, juce::dontSendNotification);
+        for (int i = 0; i < box.getNumItems(); ++i)
+            if (box.getItemText (i) == want)
+                box.setSelectedItemIndex (i, juce::dontSendNotification);
     };
-    midiOutCombo.onChange = [this] {
-        const int idx = midiOutCombo.getSelectedItemIndex();
-        if (idx >= 0) engine.openMidiOutput(midiOutCombo.getItemText(idx));
-    };
+
+    const auto ins  = juce::MidiInput::getAvailableDevices();
+    const auto outs = juce::MidiOutput::getAvailableDevices();
+    fill (lpIn,  ins,  LaunchpadSurface::findInput());
+    fill (lpOut, outs, LaunchpadSurface::findOutput());
+    fill (xlIn,  ins,  LaunchControlXlSurface::findInput());
+    fill (xlOut, outs, LaunchControlXlSurface::findOutput());
+    openSurfacesFromCombos();
 }
 
-void MainComponent::connectDmx()
+void MainComponent::openSurfacesFromCombos()
 {
-    dmx.connect();
-    dmxStatusLabel.setText(dmx.getStatusText(), juce::dontSendNotification);
-}
-
-void MainComponent::disconnectDmx()
-{
-    dmx.disconnect();
-    dmxStatusLabel.setText(dmx.getStatusText(), juce::dontSendNotification);
+    const auto name = [] (const juce::ComboBox& b) { return b.getSelectedId() > 1 ? b.getText() : juce::String(); };
+    launchpad.open (name (lpIn), name (lpOut));
+    xlSurface.open (name (xlIn), name (xlOut));
+    lastSerial = lastPadSerial = 0xffffffff;   // force an LED refresh
 }
 
 void MainComponent::timerCallback()
 {
-    const int activeIdx = engine.getActiveScene();
-    const int viewPg    = engine.getViewPage();
-
-    // Keep virtual launchpad + page tabs in sync with hardware-driven changes
-    virtualLaunchpad.setActiveScene(activeIdx);
-    virtualLaunchpad.setViewPage(viewPg);
-    if (! pageTabs[static_cast<size_t>(viewPg)].getToggleState())
-        pageTabs[static_cast<size_t>(viewPg)].setToggleState(true, juce::dontSendNotification);
-
-    // Drain MIDI log (capped at 20 lines)
-    juce::String newLines;
-    while (auto entry = midiLog.pop())
+    // Hardware LEDs + virtual surfaces follow the engine state.
+    const auto serial    = engine.getStateSerial();
+    const auto padSerial = engine.getPadSerial();
+    const double ph      = engine.getGlobalBeats() - std::floor (engine.getGlobalBeats());
+    const bool blink     = ph < 0.15;
+    if (padSerial != lastPadSerial)
     {
-        const auto& e = *entry;
-        newLines += juce::String(e.kind == MidiLogEntry::Kind::NoteOn ? "[ON ] " : "[off] ")
-                 + "ch" + juce::String(e.channel)
-                 + " n="  + juce::String(e.pitch)
-                 + " v="  + juce::String(e.velocity) + "\n";
+        launchpad.refreshLeds();
+        virtualLaunchpad.repaint();
     }
-    if (newLines.isNotEmpty())
-    {
-        const juce::StringArray lines =
-            juce::StringArray::fromLines(midiLogEditor.getText() + newLines);
-        const int start = juce::jmax(0, lines.size() - 20);
-        juce::String trimmed;
-        for (int i = start; i < lines.size(); ++i)
-            trimmed += lines[i] + "\n";
-        midiLogEditor.setText(trimmed, false);
-        midiLogEditor.moveCaretToEnd();
-    }
+    lastPadSerial = padSerial;
+    engine.pollHolds();   // long-press store (look pads) / clear (page buttons)
 
-    dmxStatusLabel.setText(dmx.getStatusText(), juce::dontSendNotification);
+    if (serial != lastSerial || blink != lastTapBlink)
+    {
+        xlSurface.refreshLeds();
+        xlPanel.sync();
+    }
+    lastSerial   = serial;
+    lastTapBlink = blink;
+
+    visualizer.setGrid (engine.getRig());
+    visualizer.setStrobe (engine.getStrobeHz());
     visualizer.repaintIfChanged();
+
+    // Tempo readout: BPM, applied relative speed, beat-in-bar dots.
+    const int beatInBar = static_cast<int> (std::floor (engine.getGlobalBeats())) % 4;
+    juce::String dots;
+    for (int i = 0; i < 4; ++i) dots << (i == beatInBar ? juce::String::fromUTF8 ("\xe2\x97\x8f ") : juce::String::fromUTF8 ("\xe2\x97\x8b "));
+    const double mult = engine.getAppliedRelSpeed();
+    tempoLabel.setText (juce::String (engine.getBpm(), 1) + " BPM   "
+                        + (mult >= 1.0 ? juce::String (juce::roundToInt (mult)) : "1/" + juce::String (juce::roundToInt (1.0 / mult)))
+                        + "x   " + dots, juce::dontSendNotification);
+
+    dmxButton.setButtonText (dmx.isRunning() ? "Disconnect DMX" : "Connect DMX");
+    dmxStatus.setText (dmx.getStatusText(), juce::dontSendNotification);
+
+    juce::String logText;
+    if (activity.takeIfChanged (logText))
+    {
+        logView.setText (logText, false);
+        logView.moveCaretToEnd();
+    }
+
+    // Persist a few seconds after the last change (and on quit).
+    if (serial != savedSerial)
+    {
+        if (saveCountdown <= 0) saveCountdown = 90;   // 3 s at 30 Hz
+        if (--saveCountdown == 0) { saveState(); savedSerial = serial; }
+    }
 }
 
-void MainComponent::paint(juce::Graphics& g)
+juce::File MainComponent::stateFile()
 {
-    g.fillAll(juce::Colour(0xff1e1e1e));
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+        .getChildFile ("Application Support/HitLaunchDmx/state.xml");
+}
+
+void MainComponent::loadState()
+{
+    if (auto xml = juce::XmlDocument::parse (stateFile()))
+        engine.fromXml (*xml);
+    savedSerial = engine.getStateSerial();
+}
+
+void MainComponent::saveState()
+{
+    const auto f = stateFile();
+    f.getParentDirectory().createDirectory();
+    if (auto xml = engine.toXml())
+        xml->writeTo (f);
+}
+
+void MainComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (kBg);
+
+    // Left panel background + title strip above the visualiser.
+    g.setColour (kPanel);
+    g.fillRoundedRectangle (8.0f, 8.0f, 230.0f, static_cast<float> (xlPanel.getY() - 16), 6.0f);
+
+    g.setColour (kPink);
+    g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    g.drawText ("Flamingo Hitmix at Night  ·  HitLaunchDmx",
+                visualizer.getX(), 8, visualizer.getWidth(), 28, juce::Justification::centred);
 }
 
 void MainComponent::resized()
 {
-    auto area = getLocalBounds().reduced(8);
-    const int leftW  = 180;
-    const int rightW = 490;
+    auto area = getLocalBounds().reduced (8);
 
-    auto leftPanel  = area.removeFromLeft(leftW);
-    area.removeFromLeft(6);
-    auto rightPanel = area.removeFromRight(rightW);
-    area.removeFromRight(6);
-    auto centrePanel = area;
+    // Bottom: the XL panel spans the width.
+    xlPanel.setBounds (area.removeFromBottom (juce::jmax (330, area.getHeight() * 40 / 100)));
+    area.removeFromBottom (8);
 
-    // ── left ──────────────────────────────────────────────────────────────
-    // Reserve the bottom for a 2×2 grid of pots.
-    auto potArea = leftPanel.removeFromBottom(200);
-
-    midiInLabel  .setBounds(leftPanel.removeFromTop(16));
-    midiInCombo  .setBounds(leftPanel.removeFromTop(24));
-    leftPanel.removeFromTop(4);
-    midiOutLabel .setBounds(leftPanel.removeFromTop(16));
-    midiOutCombo .setBounds(leftPanel.removeFromTop(24));
-    leftPanel.removeFromTop(8);
-    connectBtn   .setBounds(leftPanel.removeFromTop(26));
-    leftPanel.removeFromTop(4);
-    disconnectBtn.setBounds(leftPanel.removeFromTop(26));
-    leftPanel.removeFromTop(4);
-    blackoutBtn  .setBounds(leftPanel.removeFromTop(26));
-    leftPanel.removeFromTop(4);
-    lpModeBtn    .setBounds(leftPanel.removeFromTop(26));
-    leftPanel.removeFromTop(6);
-    dmxStatusLabel.setBounds(leftPanel.removeFromTop(46));
-    leftPanel.removeFromTop(4);
-    // Remaining (reduced) space → MIDI log
-    midiLogEditor.setBounds(leftPanel.removeFromTop(juce::jmax(40, leftPanel.getHeight())));
-
-    // 2×2 pot grid at the bottom of the left panel.
+    // Left panel.
+    auto left = area.removeFromLeft (230).reduced (10);
+    area.removeFromLeft (10);
+    dmxButton.setBounds (left.removeFromTop (28));
+    left.removeFromTop (4);
+    dmxStatus.setBounds (left.removeFromTop (44));
+    left.removeFromTop (6);
+    lpLabel.setBounds (left.removeFromTop (16));
+    lpIn.setBounds (left.removeFromTop (24));  left.removeFromTop (3);
+    lpOut.setBounds (left.removeFromTop (24)); left.removeFromTop (6);
+    xlLabel.setBounds (left.removeFromTop (16));
+    xlIn.setBounds (left.removeFromTop (24));  left.removeFromTop (3);
+    xlOut.setBounds (left.removeFromTop (24)); left.removeFromTop (4);
+    rescanButton.setBounds (left.removeFromTop (26));
+    left.removeFromTop (8);
+    gridLabel.setBounds (left.removeFromTop (16));
     {
-        const int labelH = 14;
-        const int rowH   = potArea.getHeight() / 2;
-        const int colW   = potArea.getWidth()  / 2;
-
-        auto place = [labelH](juce::Rectangle<int> cell, juce::Label& lab, juce::Slider& s)
-        {
-            lab.setBounds(cell.removeFromTop(labelH));
-            s.setBounds(cell);
-        };
-
-        auto topRow = potArea.removeFromTop(rowH);
-        place(topRow.removeFromLeft(colW), dimLabel,   dimSlider);
-        place(topRow,                      tailLabel,  tailSlider);
-
-        auto botRow = potArea;
-        place(botRow.removeFromLeft(colW), speedLabel, speedSlider);
-        place(botRow,                      xfadeLabel, xfadeSlider);
+        auto row = left.removeFromTop (26);
+        gridCols.setBounds (row.removeFromLeft (60));
+        row.removeFromLeft (4);
+        gridRows.setBounds (row.removeFromLeft (60));
+        row.removeFromLeft (4);
+        gridSet.setBounds (row);
     }
+    left.removeFromTop (8);
+    tempoLabel.setBounds (left.removeFromTop (30));
+    left.removeFromTop (6);
+    logView.setBounds (left);
 
-    // ── centre ────────────────────────────────────────────────────────────
-    visualizer.setBounds(centrePanel.reduced(4));
+    // Right: the virtual Launchpad, square, full height of the top section.
+    const int lpSide = juce::jmin (area.getHeight(), area.getWidth() / 2);
+    virtualLaunchpad.setBounds (area.removeFromRight (lpSide).withSizeKeepingCentre (lpSide, lpSide));
+    area.removeFromRight (10);
 
-    // ── right: square launchpad + page buttons in a column on its right ───
-    // Mirrors a real Launchpad: 8x8 square grid, Scene Launch buttons down
-    // the right edge (page 1 aligned to the top row).
-    {
-        const int gap     = 8;
-        const int btnColW = 64;
-        const int availW  = rightPanel.getWidth() - btnColW - gap;
-        const int availH  = rightPanel.getHeight();
-        const int side    = juce::jmax(64, juce::jmin(availW, availH));  // square
-        const int rowH    = side / 8;
-
-        const int clusterW = side + gap + btnColW;
-        const int startX   = rightPanel.getX() + (rightPanel.getWidth() - clusterW) / 2;
-        const int startY   = rightPanel.getY() + (availH - side) / 2;
-
-        virtualLaunchpad.setBounds(startX, startY, side, side);
-
-        // Page buttons: one per grid row from the top (page 0 = top row).
-        const int btnX = startX + side + gap;
-        for (int p = 0; p < kNumPages; ++p)
-        {
-            pageTabs[static_cast<size_t>(p)].setBounds(
-                btnX, startY + p * rowH, btnColW, rowH - 3);
-        }
-    }
+    // Centre: title strip + visualiser.
+    area.removeFromTop (32);
+    visualizer.setBounds (area);
 }
 
 }  // namespace hitlaunchdmx

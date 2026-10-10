@@ -32,7 +32,7 @@ public:
             setUsingNativeTitleBar(true);
             setContentOwned(new MainComponent(), true);
             setResizable(true, true);
-            centreWithSize(960, 640);
+            centreWithSize(getWidth(), getHeight());
             setVisible(true);
         }
 
