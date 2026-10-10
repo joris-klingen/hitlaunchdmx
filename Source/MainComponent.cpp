@@ -233,16 +233,21 @@ void XlPanel::paint (juce::Graphics& g)
     g.drawText ("LAUNCH CONTROL XL  ·  factory template 1", getLocalBounds().reduced (12, 6).removeFromTop (16),
                 juce::Justification::centredLeft);
 
-    // Strip separators + numbers.
+    // Strip separators + numbers; strip 8 is the master column, tinted.
     const int stripW = stripsArea.getWidth() / kNumStrips;
+    g.setColour (juce::Colour (0xff221a20));
+    g.fillRoundedRectangle (juce::Rectangle<int> (stripsArea.getX() + (kNumStrips - 1) * stripW, stripsArea.getY() - 4,
+                                                  stripW, stripsArea.getHeight() + 6).toFloat(), 6.0f);
     for (int i = 0; i < kNumStrips; ++i)
     {
         const int x = stripsArea.getX() + i * stripW;
         g.setColour (juce::Colour (0xff222222));
         if (i > 0) g.fillRect (x, stripsArea.getY(), 1, stripsArea.getHeight());
-        g.setColour (kDimText);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText (juce::String (i + 1), x, stripsArea.getBottom() - 14, stripW, 14, juce::Justification::centred);
+        const bool master = i == kNumStrips - 1;
+        g.setColour (master ? kPink : kDimText);
+        g.setFont (juce::FontOptions (11.0f, master ? juce::Font::bold : juce::Font::plain));
+        g.drawText (master ? juce::String ("MASTER") : juce::String (i + 1),
+                    x, stripsArea.getBottom() - 14, stripW, 14, juce::Justification::centred);
     }
 }
 
@@ -293,10 +298,11 @@ void XlPanel::sync()
         if (! s.isMouseButtonDown() && std::abs (s.getValue() - v) > 1.0e-4)
             s.setValue (v, juce::dontSendNotification);
 
-        // Faders beyond the grid's bar count do nothing — grey them out.
+        // Bar faders beyond the grid's bar count do nothing — grey them out
+        // (the master fader is always live).
         if (p >= kFaderParam0)
         {
-            const bool live = p - kFaderParam0 < bars;
+            const bool live = p == idx (P::LedMaster) || p - kFaderParam0 < bars;
             s.setEnabled (live);
             names[static_cast<size_t> (p)].setColour (juce::Label::textColourId, live ? kText : kDimText.darker());
         }

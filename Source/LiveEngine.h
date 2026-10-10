@@ -61,7 +61,11 @@ public:
     void  setParam (int p, float norm) noexcept;
     float getParam (int p) const noexcept { return params[static_cast<size_t> (p)].load (std::memory_order_relaxed); }
     void  buttonEvent (int b, bool down) noexcept;     // hardware or on-screen
-    bool  isButtonOn (int b) const noexcept { return buttonOn[static_cast<size_t> (b)].load (std::memory_order_relaxed); }
+    bool  isButtonOn (int b) const noexcept
+    {
+        if (b == idx (B::Blackout)) return isBlackout();   // one blackout state, two surfaces
+        return buttonOn[static_cast<size_t> (b)].load (std::memory_order_relaxed);
+    }
     bool  isBlackout() const noexcept { return blackoutOn.load (std::memory_order_relaxed); }
 
     // ── Launchpad ──
@@ -131,7 +135,7 @@ private:
     std::atomic<int>  viewPage   { kPageMotion };
     std::atomic<bool> shiftHeld  { false };
     std::atomic<bool> storeArmed { false };
-    std::atomic<bool> blackoutOn { false };   // Launchpad top-row toggle
+    std::atomic<bool> blackoutOn { false };   // XL top-8 + Launchpad top-row toggle
     std::atomic<int>  activeLook { -1 };
     std::atomic<std::uint32_t> stateSerial { 0 };
     std::atomic<std::uint32_t> padSerial   { 0 };

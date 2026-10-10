@@ -116,7 +116,7 @@ int xlButtonCode (const LiveEngine& e, int b)
             // Dark when the grid has no such bar.
             if (b - idx (B::BumpBar1) >= e.getRig().cols) return xl::kLedOff;
             return on ? xl::kLedRed : xl::kLedRedLo;
-        case B::BumpAll:                     return on ? xl::kLedRed   : xl::kLedRedLo;
+        case B::Blackout:                    return on ? xl::kLedRed   : xl::kLedRedLo;
         case B::Strobe:                      return on || e.getStrobeHz() > 0.0f ? xl::kLedYellow : xl::kLedAmberLo;
         case B::Freeze:   case B::Flip:
         case B::Reverse:                     return on ? xl::kLedGreen : xl::kLedGreenLo;

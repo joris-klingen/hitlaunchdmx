@@ -90,14 +90,20 @@ The full table lives in `Source/Controls.h` (the one place to remap).
 | Strip | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
 | Send A | BPM | Rel speed | Chase tail | Breathe | Wild div | Multi spd | Spread | Density |
-| Send B | Release | Bump lvl | Crossfade | Col fade | Strobe Hz | Blk glide | – | – |
-| Pan | LED dim | Spot dim | – | – | – | – | – | – |
-| Fader | Bar 1 | Bar 2 | Bar 3 | Bar 4 | Bar 5 | Bar 6 | Bar 7 | Bar 8 |
-| Focus btn | **Bump 1** | **Bump 2** | **Bump 3** | **Bump 4** | **Bump 5** | **Bump 6** | **Bump 7** | **Bump all** |
-| Control btn | Tap | Restart | **Strobe** | From black | To black | Freeze | Flip | Reverse |
+| Send B | Release | Bump lvl | Crossfade | Col fade | – | Blk glide | – | Spot dim |
+| Pan | – | – | – | – | – | – | – | Strobe Hz |
+| Fader | Bar 1 | Bar 2 | Bar 3 | Bar 4 | Bar 5 | Bar 6 | Bar 7 | **Master** (LED dim) |
+| Focus btn | **Bump 1** | **Bump 2** | **Bump 3** | **Bump 4** | **Bump 5** | **Bump 6** | **Bump 7** | Blackout |
+| Control btn | Tap | Restart | Reverse | From black | To black | Freeze | Flip | **Strobe** |
+
+Strips 1–7 are the bars (fader = bar dim, top button = bar bump); **strip 8
+is the master column** — Density, Spot dim, Strobe Hz, the Master fader,
+Blackout over Strobe. Blackout is one state shared with the Launchpad's
+top-row Blackout. Saved state from the earlier layout is migrated on load
+(`paramLayout` attribute).
 
 Bumps and Strobe are momentary, Tap/Restart one-shots, the rest toggle.
-Blackout is on the Launchpad's top row. **Bump 1–7** are per-bar bumps: the
+**Bump 1–7** are per-bar bumps: the
 same flash as hitnotedmx's Bump (fires on the press, decays over *Release*,
 toward white or the held primary colour, at *Bump lvl*, scaled by that bar's
 fader and *LED dim*) on one bar only. hitnotedmx's Bump is whole-rig, so the
@@ -136,6 +142,10 @@ quarantine flag.
 
 ## Changelog
 
+- **2026-10 — XL strip 8 = master column:** Density, Spot dim (Send B 8),
+  Strobe Hz (Pan 8), Master dim (fader 8), Blackout (top 8) over Strobe
+  (bottom 8). Reverse → bottom 3; Bump all dropped (bar bumps 1–7 remain);
+  grids now have bar faders for bars 1–7. Old saved params migrate.
 - **2026-10 — XL buttons reworked:** top row = per-bar bumps 1–7 + Bump all;
   bottom row = Tap, Restart, Strobe, From black, To black, Freeze, Flip,
   Reverse. Blackout moved to the Launchpad only.

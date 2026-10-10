@@ -18,9 +18,13 @@ namespace hitlaunchdmx
 //   knob row 0 "Send A"  → params  0.. 7
 //   knob row 1 "Send B"  → params  8..15
 //   knob row 2 "Pan"     → params 16..23
-//   faders               → params 24..31  (per-bar dims, bar 1..8)
-//   button row 0 "Track Focus"   → buttons 0..7   (bar bumps 1-7, bump all)
-//   button row 1 "Track Control" → buttons 8..15  (tap, restart, strobe, fades, freeze/flip/reverse)
+//   faders               → params 24..31  (per-bar dims, bar 1..7)
+//   button row 0 "Track Focus"   → buttons 0..7   (bar bumps 1-7)
+//   button row 1 "Track Control" → buttons 8..15  (tap, restart, reverse, fades, freeze, flip)
+//
+// Strips 1-7 are the bars (fader = bar dim, top button = bar bump). Strip 8 is
+// the MASTER column: Density · Spot dim · Strobe Hz · Master (LED) dim fader ·
+// Blackout (top) · Strobe (bottom).
 //
 // Params are stored normalised (0..1, = CC / 127); the helpers below turn them
 // into engine values. The engine feeds most of them to hitnotedmx's computeDmx
@@ -38,12 +42,14 @@ enum class P : int
     // Send A — tempo & motion
     Bpm = 0, RelSpeed, ChaseTail, BreatheDepth, WildDiv, ColorSpeed, Spread, Density,
     // Send B — accents & transitions
-    BumpRelease = 8, BumpLevel, Crossfade, ColorFade, StrobeRate, BlackGlide, SpareB7, SpareB8,
-    // Pan — masters
-    LedMaster = 16, SpotMaster, SpareP3, SpareP4, SpareP5, SpareP6, SpareP7, SpareP8,
-    // Faders — per-bar dims
-    BarDim1 = 24,
+    BumpRelease = 8, BumpLevel, Crossfade, ColorFade, SpareB5, BlackGlide, SpareB7, SpotMaster,
+    // Pan — spare except the master column's strobe rate
+    SpareP1 = 16, SpareP2, SpareP3, SpareP4, SpareP5, SpareP6, SpareP7, StrobeRate,
+    // Faders — per-bar dims 1..7, then the master (LED) dim
+    BarDim1 = 24, LedMaster = 31,
 };
+
+inline constexpr int kNumBarFaders = 7;   // faders 1..7 = bar dims; fader 8 = master
 
 inline constexpr int idx (P p) noexcept { return static_cast<int> (p); }
 
@@ -69,29 +75,29 @@ inline constexpr std::array<ParamDef, kNumParams> kParamDefs {{
     { "Bump lvl",   1.0f,         true  },
     { "Crossfade",  0.0f,         true  },   // 0 = instant
     { "Col fade",   0.0f,         true  },   // 0 = instant colour change
-    { "Strobe Hz",  0.5f,         true  },
+    { "-",          0.0f,         false },
     { "Blk glide",  0.0f,         true  },   // 0 = instant to/from black
     { "-",          0.0f,         false },
-    { "-",          0.0f,         false },
+    { "Spot dim",   1.0f,         true  },   // master column
     // Pan
-    { "LED dim",    1.0f,         true  },
-    { "Spot dim",   1.0f,         true  },
     { "-",          0.0f,         false },
     { "-",          0.0f,         false },
     { "-",          0.0f,         false },
     { "-",          0.0f,         false },
     { "-",          0.0f,         false },
     { "-",          0.0f,         false },
+    { "-",          0.0f,         false },
+    { "Strobe Hz",  0.5f,         true  },   // master column
     // Faders
     { "Bar 1", 1.0f, true }, { "Bar 2", 1.0f, true }, { "Bar 3", 1.0f, true }, { "Bar 4", 1.0f, true },
-    { "Bar 5", 1.0f, true }, { "Bar 6", 1.0f, true }, { "Bar 7", 1.0f, true }, { "Bar 8", 1.0f, true },
+    { "Bar 5", 1.0f, true }, { "Bar 6", 1.0f, true }, { "Bar 7", 1.0f, true }, { "Master", 1.0f, true },
 }};
 
 // ── Buttons ──
 enum class B : int
 {
-    BumpBar1 = 0, BumpBar2, BumpBar3, BumpBar4, BumpBar5, BumpBar6, BumpBar7, BumpAll,   // Track Focus row
-    Tap = 8, Restart, Strobe, FromBlack, ToBlack, Freeze, Flip, Reverse,                 // Track Control row
+    BumpBar1 = 0, BumpBar2, BumpBar3, BumpBar4, BumpBar5, BumpBar6, BumpBar7, Blackout,  // Track Focus row
+    Tap = 8, Restart, Reverse, FromBlack, ToBlack, Freeze, Flip, Strobe,                 // Track Control row
 };
 
 // Per-bar bumps (bars 1..7). Same flash as hitnotedmx's Bump — fires on the
@@ -118,15 +124,15 @@ inline constexpr std::array<ButtonDef, kNumButtons> kButtonDefs {{
     { "Bump 5",     ButtonKind::Momentary },
     { "Bump 6",     ButtonKind::Momentary },
     { "Bump 7",     ButtonKind::Momentary },
-    { "Bump all",   ButtonKind::Momentary },
+    { "Blackout",   ButtonKind::Toggle    },   // same state as the Launchpad's Blackout
     { "Tap",        ButtonKind::Trigger   },
     { "Restart",    ButtonKind::Trigger   },
-    { "Strobe",     ButtonKind::Momentary },
+    { "Reverse",    ButtonKind::Toggle    },
     { "From black", ButtonKind::Toggle    },
     { "To black",   ButtonKind::Toggle    },
     { "Freeze",     ButtonKind::Toggle    },
     { "Flip",       ButtonKind::Toggle    },
-    { "Reverse",    ButtonKind::Toggle    },
+    { "Strobe",     ButtonKind::Momentary },
 }};
 
 // ── Value helpers (normalised → engine units) ──

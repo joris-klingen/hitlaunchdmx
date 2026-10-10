@@ -188,6 +188,61 @@ int main()
         e.fromXml (*saved);
     }
 
+    // ── master column (strip 8) ──
+    check (xl::paramForCc (xl::kFaderCc[7]) == idx (P::LedMaster), "fader 8 = master dim");
+    check (xl::paramForCc (xl::kPanCc[7]) == idx (P::StrobeRate), "pan 8 = strobe speed");
+    check (xl::paramForCc (xl::kSendBCc[7]) == idx (P::SpotMaster), "send B 8 = spot dim");
+    check (xl::buttonForNote (xl::kFocusNote[7]) == idx (B::Blackout), "top 8 = Blackout");
+    check (xl::buttonForNote (xl::kControlNote[7]) == idx (B::Strobe), "bottom 8 = Strobe");
+    check (xl::buttonForNote (xl::kControlNote[2]) == idx (B::Reverse), "bottom 3 = Reverse");
+
+    e.buttonEvent (idx (B::Blackout), true);                 // XL Blackout …
+    e.buttonEvent (idx (B::Blackout), false);
+    check (e.isBlackout() && e.isButtonOn (idx (B::Blackout)), "XL Blackout sets the shared blackout");
+    e.topButton (TopButton::Blackout, true);                 // … Launchpad clears it
+    e.topButton (TopButton::Blackout, false);
+    check (! e.isBlackout() && ! e.isButtonOn (idx (B::Blackout)), "Launchpad Blackout clears the same state");
+
+    run (e, 0.3);
+    {
+        float before = 0;
+        for (int b = 0; b < 4; ++b) { const auto x = barSum (e, b); before += x.r + x.g + x.b; }
+        e.setParam (idx (P::LedMaster), 0.0f);
+        run (e, 0.3);
+        float after = 0;
+        for (int b = 0; b < 4; ++b) { const auto x = barSum (e, b); after += x.r + x.g + x.b; }
+        check (before > 1.0f && after < 1.0e-4f, "master fader at 0 darkens every bar");
+        e.setParam (idx (P::LedMaster), 1.0f);
+    }
+
+    e.setParam (idx (P::StrobeRate), 1.0f);
+    e.buttonEvent (idx (B::Strobe), true);
+    run (e, 0.05);
+    check (std::abs (e.getStrobeHz() - static_cast<float> (hitnotedmx::kStrobeMaxHz)) < 0.01f, "Strobe at full speed = 20 Hz");
+    e.buttonEvent (idx (B::Strobe), false);
+    run (e, 0.05);
+    check (e.getStrobeHz() == 0.0f, "Strobe off on release");
+    e.setParam (idx (P::StrobeRate), 0.5f);
+
+    // ── saved state from before the master column is migrated ──
+    {
+        juce::StringArray old;
+        for (int i = 0; i < kNumParams; ++i) old.add ("0.5");
+        old.set (12, "0.9");    // old Strobe Hz (Send B 5)
+        old.set (16, "0.3");    // old LED dim (Pan 1)
+        old.set (17, "0.7");    // old Spot dim (Pan 2)
+        old.set (31, "0.1");    // old bar 8 dim
+        juce::XmlElement x ("HitLaunchDmx");
+        x.setAttribute ("params", old.joinIntoString (" "));
+        LiveEngine m (dmx);
+        m.fromXml (x);
+        check (std::abs (m.getParam (idx (P::StrobeRate)) - 0.9f) < 1e-4f
+            && std::abs (m.getParam (idx (P::LedMaster))  - 0.3f) < 1e-4f
+            && std::abs (m.getParam (idx (P::SpotMaster)) - 0.7f) < 1e-4f
+            && std::abs (m.getParam (idx (P::Bpm))        - 0.5f) < 1e-4f,
+               "old param layout migrates to the master column");
+    }
+
     // ── looks: store + recall ──
     e.setViewPage (kFirstLookPage);
     e.topButton (TopButton::Store, true);

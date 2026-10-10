@@ -48,6 +48,12 @@ void LiveEngine::buttonEvent (int b, bool down) noexcept
 {
     if (b < 0 || b >= kNumButtons)
         return;
+    if (b == idx (B::Blackout))
+    {
+        if (down) blackoutOn.store (! blackoutOn.load());
+        changed();
+        return;
+    }
     const auto kind = kButtonDefs[static_cast<size_t> (b)].kind;
     auto& on = buttonOn[static_cast<size_t> (b)];
 
@@ -325,11 +331,6 @@ void LiveEngine::tick (double nowSec)
     }
 
     // 2b. XL buttons + knobs that are notes in hitnotedmx.
-    if (btn (B::BumpAll) || pressedSinceLast[static_cast<size_t> (idx (B::BumpAll))])
-    {
-        vel[kBumpPitch] = velFromNorm (prm (P::BumpLevel));
-        retrigger[kBumpPitch] = pressedSinceLast[static_cast<size_t> (idx (B::BumpAll))];
-    }
     const bool strobeOn = btn (B::Strobe) || pressedSinceLast[static_cast<size_t> (idx (B::Strobe))]
                        || sel[hitnotedmx::kStrobePitch].load (std::memory_order_relaxed) != 0;
     if (strobeOn)
@@ -361,7 +362,7 @@ void LiveEngine::tick (double nowSec)
     // 3. Compose with hitnotedmx's engine.
     float barDim[hitnotedmx::kMaxBars];
     for (int i = 0; i < hitnotedmx::kMaxBars; ++i)
-        barDim[i] = i < kNumStrips ? params[static_cast<size_t> (kFaderParam0 + i)].load (std::memory_order_relaxed) : 1.0f;
+        barDim[i] = i < kNumBarFaders ? params[static_cast<size_t> (kFaderParam0 + i)].load (std::memory_order_relaxed) : 1.0f;
 
     hitnotedmx::computeDmx (midiState, t, dmxValues, grid,
                             prm (P::LedMaster), prm (P::SpotMaster),
@@ -454,6 +455,7 @@ std::unique_ptr<juce::XmlElement> LiveEngine::toXml() const
     for (int i = 0; i < kNumParams; ++i)
         ps.add (juce::String (getParam (i), 4));
     xml->setAttribute ("params", ps.joinIntoString (" "));
+    xml->setAttribute ("paramLayout", 2);
 
     const auto selToString = [] (auto get)
     {
@@ -485,8 +487,26 @@ void LiveEngine::fromXml (const juce::XmlElement& xml)
                   xml.getIntAttribute ("gridRows", hitnotedmx::kDefaultRows));
 
     const auto ps = juce::StringArray::fromTokens (xml.getStringAttribute ("params"), " ", {});
-    for (int i = 0; i < juce::jmin (kNumParams, ps.size()); ++i)
-        setParam (i, ps[i].getFloatValue());
+    if (xml.getIntAttribute ("paramLayout", 1) >= 2)
+    {
+        for (int i = 0; i < juce::jmin (kNumParams, ps.size()); ++i)
+            setParam (i, ps[i].getFloatValue());
+    }
+    else
+    {
+        // Layout 1 (before the master column): Strobe Hz was Send B 5 (12),
+        // LED dim Pan 1 (16), Spot dim Pan 2 (17), fader 8 = bar 8 dim (31).
+        for (int i = 0; i < juce::jmin (kNumParams, ps.size()); ++i)
+        {
+            int to = i;
+            if      (i == 12) to = idx (P::StrobeRate);
+            else if (i == 16) to = idx (P::LedMaster);
+            else if (i == 17) to = idx (P::SpotMaster);
+            else if (i == 14 || i == 15 || (i >= 18 && i <= 23) || i == 31)
+                continue;   // layout-1 spares (Send B 7-8, Pan 3-8) and the bar-8 dim
+            setParam (to, ps[i].getFloatValue());
+        }
+    }
 
     const auto parseSel = [] (const juce::String& s, auto set)
     {
