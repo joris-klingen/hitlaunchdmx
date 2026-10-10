@@ -205,8 +205,6 @@ private:
     int    autoAppliedLevel = -1, autoApplied = -1;
     double autoStartBar     = 0.0;
     double autoLastChange   = -1.0e9, autoNextChange = 1.0e9;   // global beats
-    double autoBeatSeen     = -1.0;
-    int    autoBumpCount    = 0;
 
     // Per-bar bump flashes (bars 1..7): level 1 on the press, decaying over
     // the Release length; amount = Bump lvl captured on the press.

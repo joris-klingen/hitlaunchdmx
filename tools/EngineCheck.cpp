@@ -357,15 +357,20 @@ int main()
         e.topButton (TopButton::Auto3, true);             // Party: Chase + Red, bump each downbeat
         e.topButton (TopButton::Auto3, false);
         run (e, 0.05);
-        e.setParam (idx (P::BumpLevel), 1.0f);
         {
-            // Run up to just past the next downbeat; a full red bar there can
-            // only be the auto bump (the chase lights a few pixels).
-            const double toBar = (4.0 - std::fmod (e.getGlobalBeats(), 4.0)) * 0.5;
-            run (e, toBar + 0.02);
-            float best = 0;
-            for (int b = 0; b < 4; ++b) best = juce::jmax (best, barSum (e, b).r);
-            check (best > 15.0f, "Party fires a bar bump on the downbeat");
+            // Auto adds nothing on top of a program (no automatic bumps): with
+            // Party's Chase + Red at tail 0, no bar ever lights fully, even
+            // across downbeats (an auto bump used to flash a whole bar there).
+            e.setParam (idx (P::ChaseTail), 0.0f);
+            e.setParam (idx (P::BumpLevel), 1.0f);
+            float worst = 0;
+            for (int i = 0; i < 300; ++i)                  // 3 s ≈ 6 beats, 1+ downbeat
+            {
+                run (e, 0.01);
+                if (e.getAutoProgram() != 0) break;
+                for (int b = 0; b < 4; ++b) worst = juce::jmax (worst, barSum (e, b).r);
+            }
+            check (worst < 8.0f, "auto fires no bumps on top of the programs");
         }
         e.setViewPage (kPageMotion);
         tapPad (e, 8, 1);                                 // any manual pad stops auto

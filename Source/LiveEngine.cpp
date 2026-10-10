@@ -416,7 +416,6 @@ void LiveEngine::tick (double nowSec)
     //     next program. Writing the selection needs stateLock, which the tick
     //     must never wait on — so try it, and retry next tick (10 ms) if busy.
     const int autoLvl = autoLevel.load (std::memory_order_relaxed);
-    int autoBumpBar = -1;
     if (autoLvl >= 0)
     {
         const auto& L = autoLevels()[static_cast<size_t> (autoLvl)];
@@ -426,8 +425,6 @@ void LiveEngine::tick (double nowSec)
             autoAppliedLevel = autoLvl;
             autoApplied      = -1;
             autoLastChange   = -1.0e9;
-            autoBeatSeen     = std::floor (globalBeats);
-            autoBumpCount    = 0;
         }
         const double sinceStart = std::floor (globalBeats / 4.0) - autoStartBar;      // bars
         const int    block      = static_cast<int> (sinceStart) / L.barsPerProgram;
@@ -451,24 +448,6 @@ void LiveEngine::tick (double nowSec)
                 autoApplied = prog;
                 autoProgramOut.store (prog);
                 changed();
-            }
-        }
-
-        // Auto bumps every N global beats: sweep across the bars, or random.
-        const double beat = std::floor (globalBeats);
-        if (beat > autoBeatSeen)
-        {
-            autoBeatSeen = beat;
-            if (L.bumpEveryBeats > 0 && static_cast<long long> (beat) % L.bumpEveryBeats == 0)
-            {
-                const int bars = juce::jmin (grid.rig.cols, kNumBarBumps);
-                if (bars > 0)
-                {
-                    std::uint32_t h = static_cast<std::uint32_t> (static_cast<long long> (beat)) * 0x9E3779B9u;
-                    h ^= h >> 15;  h *= 0x85EBCA6Bu;  h ^= h >> 13;
-                    autoBumpBar = L.bumpSweep ? autoBumpCount % bars : static_cast<int> (h % static_cast<std::uint32_t> (bars));
-                    ++autoBumpCount;
-                }
             }
         }
     }
@@ -592,7 +571,7 @@ void LiveEngine::tick (double nowSec)
         for (int b = 0; b < kNumBarBumps; ++b)
         {
             auto& level = barFlashLevel[static_cast<size_t> (b)];
-            if (pressedSinceLast[static_cast<size_t> (idx (B::BumpBar1) + b)] || b == autoBumpBar)
+            if (pressedSinceLast[static_cast<size_t> (idx (B::BumpBar1) + b)] )
             {
                 level = 1.0f;                                         // instant attack
                 barFlashAmount[static_cast<size_t> (b)] = velFromNorm (prm (P::BumpLevel)) / 127.0f;

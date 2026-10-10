@@ -96,12 +96,12 @@ and Blackout off, Spread off, Rel speed 1×, Crossfade and Col fade 0 (the
 level's own transitions take over). Masters, faders, BPM and the recipe knobs
 (tail, depth, speeds) are kept.
 
-| Level | Changes every | Transitions | Extra |
+| Level | Changes every | Transitions | Programs |
 |---|---|---|---|
 | 1 Mellow | 8 bars | 1-bar crossfade, slow colour glide | breathes + calm Multicolor |
 | 2 Groove | 4 bars | shorter crossfade, medium glide | slow chases + breathes |
-| 3 Party | 2 bars | cut | bar bump on every downbeat, sweeping across the bars |
-| 4 Disco | 1 bar | cut | bar bump on every beat, random bar |
+| 3 Party | 2 bars | cut | chases + wild + hot Multicolor |
+| 4 Disco | 1 bar | cut | Disco, Rainbow, Police, sparkles, fast movers |
 
 The auto crossfade is held only around each change (from ¼ beat before to one
 bar after), so recipes aren't motion-blurred in between; the XL Crossfade / Col
@@ -167,6 +167,10 @@ quarantine flag.
 
 ## Changelog
 
+- **2026-10 — No auto bumps:** Party/Disco's automatic per-bar bumps (bars
+  flashing in turn on every downbeat / beat) read as a bar-swapping chase on
+  top of every program — removed. Auto now plays only the programs; accents
+  stay on the XL bump buttons.
 - **2026-10 — Auto fix + reset:** auto programs zero-filled their unused note
   slots, so every program also held note 0 (hitnotedmx Blackout) and the rig
   went dark except for bar bumps — fixed (and note 0 is dropped from saved

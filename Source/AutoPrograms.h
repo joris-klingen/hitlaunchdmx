@@ -22,9 +22,9 @@ namespace hitlaunchdmx
 //     change (127 = one-bar glide); `colourVel` caps the palette velocity so
 //     colours glide (lower = slower, 127 = instant). The XL Crossfade / Col
 //     fade knobs still win when they ask for MORE smoothing.
-//   • `bumpEveryBeats` > 0 fires a per-bar bump every N global beats
-//     (Party: bar downbeats, sweeping across the bars; Disco: every beat on a
-//     random bar), at the XL Bump lvl / Release settings.
+//   • the change rate (`barsPerProgram`) and the program content.
+// Auto adds nothing on top of the programs (no automatic bumps) — accents
+// stay on the XL bump buttons.
 //
 // THE EDITABLE TABLE: change, add or reorder programs freely (up to
 // kMaxPrograms per level, up to kMaxNotes notes per program).
@@ -54,8 +54,6 @@ struct AutoLevel
     int  barsPerProgram;
     int  xfadeVel;          // 0 = cut
     int  colourVel;         // palette velocity cap (127 = instant)
-    int  bumpEveryBeats;    // 0 = no auto bumps
-    bool bumpSweep;         // true = bars in turn, false = random bar
     int  numPrograms;
     std::array<AutoProgram, kMaxPrograms> programs;
 };
@@ -100,19 +98,19 @@ inline const std::array<AutoLevel, kNumAutoLevels>& autoLevels()
 {
     using namespace autonotes;
     static const std::array<AutoLevel, kNumAutoLevels> levels {{
-        { "Mellow", 8, 127, 20, 0, false, 8, {{
+        { "Mellow", 8, 127, 20, 8, {{
             AutoProgram { Tide, Blue },          AutoProgram { MoonRise, Amber },     AutoProgram { Ocean },               AutoProgram { SoftBall, Violet },
             AutoProgram { Aurora, Teal },        AutoProgram { Borealis },            AutoProgram { Drift, WarmWhite },    AutoProgram { Twilight },
         }}},
-        { "Groove", 4, 100, 70, 0, false, 8, {{
+        { "Groove", 4, 100, 70, 8, {{
             AutoProgram { Waves, Cyan },         AutoProgram { Bloom, Magenta },      AutoProgram { Expand, Orange },      AutoProgram { Sunset },
             AutoProgram { Ripple, Royal },       AutoProgram { Halo, Pink },          AutoProgram { Theater, Amber },      AutoProgram { Lava },
         }}},
-        { "Party", 2, 0, 127, 4, true, 8, {{
+        { "Party", 2, 0, 127, 8, {{
             AutoProgram { Chase, Red },          AutoProgram { Bounce, Cyan },        AutoProgram { Fire, ChaseH },        AutoProgram { Spiral, Lime },
             AutoProgram { Rain, Blue },          AutoProgram { Plasma },              AutoProgram { PingPong, HotPink },   AutoProgram { Fountain, Yellow },
         }}},
-        { "Disco", 1, 0, 127, 1, false, 8, {{
+        { "Disco", 1, 0, 127, 8, {{
             AutoProgram { Disco },               AutoProgram { Sparkle, Magenta },    AutoProgram { Rainbow, Chase },      AutoProgram { FastBall, Cyan },
             AutoProgram { Police },              AutoProgram { Glitch, Yellow },      AutoProgram { Pong, HotPink },       AutoProgram { Lightning, CoolWhite },
         }}},
