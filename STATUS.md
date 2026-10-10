@@ -50,7 +50,7 @@ Launchpad + virtual XL panel, visualiser, tempo readout, autosave.
 | Multicolor 60–83 | XL *Multi spd* |
 | Palette 84–119 | XL *Col fade* (0 = instant) |
 | Spots 1–4, blackout 0 | 127 |
-| Bump 120 / Release 121 | *Bump lvl* / *Release* |
+| Bump 120 / Release 121 | *Bump lvl* / *Release* (Bump = XL *Bump all*) |
 | Crossfade 122 / Spread 126 | knob; held only when > 0 |
 | To/From black 10/9 | *Blk glide* (0 = instant) |
 | Freeze/Reverse/Flip 123–125 | 127 while toggled on |
@@ -93,10 +93,17 @@ The full table lives in `Source/Controls.h` (the one place to remap).
 | Send B | Release | Bump lvl | Crossfade | Col fade | Strobe Hz | Blk glide | – | – |
 | Pan | LED dim | Spot dim | – | – | – | – | – | – |
 | Fader | Bar 1 | Bar 2 | Bar 3 | Bar 4 | Bar 5 | Bar 6 | Bar 7 | Bar 8 |
-| Focus btn | **Bump** | **Strobe** | Freeze | Flip | Reverse | To black | From black | Blackout |
-| Control btn | Tap | Restart | – | – | – | – | – | – |
+| Focus btn | **Bump 1** | **Bump 2** | **Bump 3** | **Bump 4** | **Bump 5** | **Bump 6** | **Bump 7** | **Bump all** |
+| Control btn | Tap | Restart | **Strobe** | From black | To black | Freeze | Flip | Reverse |
 
-Bump/Strobe are momentary, Tap/Restart one-shots, the rest toggle. Faders
+Bumps and Strobe are momentary, Tap/Restart one-shots, the rest toggle.
+Blackout is on the Launchpad's top row. **Bump 1–7** are per-bar bumps: the
+same flash as hitnotedmx's Bump (fires on the press, decays over *Release*,
+toward white or the held primary colour, at *Bump lvl*, scaled by that bar's
+fader and *LED dim*) on one bar only. hitnotedmx's Bump is whole-rig, so the
+per-bar flash is done in this app (`LiveEngine::tick` step 4) on a copy of the
+composed frame, which keeps it working under Freeze. A bump for a bar the grid
+doesn't have does nothing (LED off). Faders
 beyond the grid's bar count do nothing (greyed on screen).
 
 ## Files
@@ -129,6 +136,9 @@ quarantine flag.
 
 ## Changelog
 
+- **2026-10 — XL buttons reworked:** top row = per-bar bumps 1–7 + Bump all;
+  bottom row = Tap, Restart, Strobe, From black, To black, Freeze, Flip,
+  Reverse. Blackout moved to the Launchpad only.
 - **2026-10 — Motion page is the all-in-one play page:** zones removed from
   the Launchpad; 12 colours in the right two columns (rows 8-3) and 16
   Multicolor looks across the bottom two rows. Zones and bar selectors are

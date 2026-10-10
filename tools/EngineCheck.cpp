@@ -135,18 +135,58 @@ int main()
     }
     check (std::abs (e.getBpm() - 120.0) < 6.0, "4 taps 0.5 s apart ≈ 120 BPM");
 
-    // ── blackout ──
-    e.buttonEvent (idx (B::Blackout), true);
-    e.buttonEvent (idx (B::Blackout), false);
+    // ── blackout (Launchpad top row) ──
+    e.topButton (TopButton::Blackout, true);
+    e.topButton (TopButton::Blackout, false);
     run (e, 0.2);
     {
         float sum = 0;
         for (int ch = 1; ch <= e.getRig().rigChannels(); ++ch) sum += e.getDmxValues().get (ch);
         check (sum < 1.0e-4f, "Blackout toggle kills the rig");
     }
-    e.buttonEvent (idx (B::Blackout), true);
-    e.buttonEvent (idx (B::Blackout), false);
-    check (! e.isButtonOn (idx (B::Blackout)), "Blackout toggles back off");
+    e.topButton (TopButton::Blackout, true);
+    e.topButton (TopButton::Blackout, false);
+    check (! e.isBlackout(), "Blackout toggles back off");
+
+    // ── per-bar bump (XL top row) ──
+    {
+        const auto saved = e.toXml();             // keep the look for the checks below
+        e.clearSelection();
+        run (e, 0.5);
+        const auto dark = barSum (e, 1);
+        check (dark.r + dark.g + dark.b < 1.0e-4f, "nothing held = dark rig");
+
+        e.buttonEvent (idx (B::BumpBar2), true);
+        e.buttonEvent (idx (B::BumpBar2), false);  // a quick tap still fires
+        run (e, 0.01);
+        const auto b2 = barSum (e, 1), b1 = barSum (e, 0), b3 = barSum (e, 2);
+        check (b2.r > 10.0f && b2.g > 10.0f && b2.b > 10.0f, "Bump 2 flashes bar 2 white");
+        check (b1.r + b1.g + b1.b + b3.r + b3.g + b3.b < 1.0e-4f, "Bump 2 leaves bars 1 and 3 dark");
+
+        e.setViewPage (kPageMotion);
+        e.padPressed (8, 8);                       // Orange held → flash in orange
+        e.buttonEvent (idx (B::BumpBar4), true);
+        e.buttonEvent (idx (B::BumpBar4), false);
+        run (e, 0.01);
+        const auto b4 = barSum (e, 3);
+        check (b4.r > 10.0f && b4.b < 1.0e-3f, "bar bump takes the held primary colour");
+
+        // Orange alone lights the whole rig, so "back to the scene" = every
+        // bar equal to an untouched one again.
+        const auto sameAsBar1 = [&e] (int bar)
+        {
+            const auto a = barSum (e, 0), b = barSum (e, bar);
+            return std::abs (a.r - b.r) + std::abs (a.g - b.g) + std::abs (a.b - b.b) < 1.0e-3f;
+        };
+        run (e, 3.0);                              // > 1 bar at the default release
+        check (sameAsBar1 (1) && sameAsBar1 (3), "bar bumps decay back to the scene");
+
+        e.buttonEvent (idx (B::BumpBar7), true);   // bar 7 on a 4-bar grid: nothing
+        e.buttonEvent (idx (B::BumpBar7), false);
+        run (e, 0.01);
+        check (sameAsBar1 (1) && sameAsBar1 (2) && sameAsBar1 (3), "bump beyond the grid changes nothing");
+        e.fromXml (*saved);
+    }
 
     // ── looks: store + recall ──
     e.setViewPage (kFirstLookPage);

@@ -162,7 +162,7 @@ void LiveEngine::topButton (TopButton b, bool down) noexcept
         case TopButton::Clear:    if (down) clearSelection(); break;
         case TopButton::Store:    if (down) storeArmed.store (! storeArmed.load()); break;
         case TopButton::Shift:    shiftHeld.store (down); break;
-        case TopButton::Blackout: buttonEvent (idx (B::Blackout), down); return;
+        case TopButton::Blackout: if (down) blackoutOn.store (! blackoutOn.load()); break;
     }
     changed();
 }
@@ -325,10 +325,10 @@ void LiveEngine::tick (double nowSec)
     }
 
     // 2b. XL buttons + knobs that are notes in hitnotedmx.
-    if (btn (B::Bump) || pressedSinceLast[static_cast<size_t> (idx (B::Bump))])
+    if (btn (B::BumpAll) || pressedSinceLast[static_cast<size_t> (idx (B::BumpAll))])
     {
         vel[kBumpPitch] = velFromNorm (prm (P::BumpLevel));
-        retrigger[kBumpPitch] = pressedSinceLast[static_cast<size_t> (idx (B::Bump))];
+        retrigger[kBumpPitch] = pressedSinceLast[static_cast<size_t> (idx (B::BumpAll))];
     }
     const bool strobeOn = btn (B::Strobe) || pressedSinceLast[static_cast<size_t> (idx (B::Strobe))]
                        || sel[hitnotedmx::kStrobePitch].load (std::memory_order_relaxed) != 0;
@@ -337,7 +337,8 @@ void LiveEngine::tick (double nowSec)
     if (btn (B::Freeze))    vel[kFreezePitch]    = 127;
     if (btn (B::Flip))      vel[kFlipPitch]      = 127;
     if (btn (B::Reverse))   vel[kReversePitch]   = 127;
-    if (btn (B::Blackout))  vel[kBlackoutPitch]  = 127;
+    const bool blackout = blackoutOn.load (std::memory_order_relaxed);
+    if (blackout)           vel[kBlackoutPitch]  = 127;
     if (btn (B::ToBlack))   vel[kToBlackPitch]   = instantVel (prm (P::BlackGlide));
     if (btn (B::FromBlack)) vel[kFromBlackPitch] = juce::jmax (2, instantVel (prm (P::BlackGlide)));  // 1 = "hold black" sentinel
 
@@ -367,7 +368,60 @@ void LiveEngine::tick (double nowSec)
                             &colorFade, dt, prm (P::Density),
                             &selection, &bumpState, barDim);
 
-    // 4. Strobe shutter lives in the driver (as in hitnotedmx).
+    // 4. Per-bar bumps — hitnotedmx's Bump flash (advanceBumpFlash /
+    //    applyBumpOverlay), one bar each. Applied to a COPY of the composed
+    //    frame: under Freeze computeDmx keeps dmxValues as-is, so writing the
+    //    flash into it would bake the flash into the frozen look.
+    outFrame = dmxValues;
+    {
+        const double dT = lastFlashT >= 0.0 ? juce::jmax (0.0, t - lastFlashT) : 0.0;
+        lastFlashT = t;
+        const float relBeats = 0.25f * std::pow (16.0f, static_cast<float> (vel[kReleasePitch] - 1) / 126.0f);
+        const float rate     = static_cast<float> (dT) / relBeats;
+
+        // Target: the most recently started held primary (hitnotedmx's
+        // pickColor — ties go to the lower note), else white.
+        float colR = 1.0f, colG = 1.0f, colB = 1.0f;
+        double newest = -1.0;
+        for (int p = hitnotedmx::kPrimaryPaletteStart; p < hitnotedmx::kSecondaryPaletteStart; ++p)
+            if (vel[static_cast<size_t> (p)] > 0 && startBeat[static_cast<size_t> (p)] > newest)
+            {
+                newest = startBeat[static_cast<size_t> (p)];
+                const auto c = hitnotedmx::kPalette[static_cast<size_t> (p - hitnotedmx::kPrimaryPaletteStart)];
+                colR = c.r; colG = c.g; colB = c.b;
+            }
+
+        const float ledDim = prm (P::LedMaster);
+        const float kCut   = bumpState.blackLevel;   // to/from-black dip, as hitnotedmx applies it
+        for (int b = 0; b < kNumBarBumps; ++b)
+        {
+            auto& level = barFlashLevel[static_cast<size_t> (b)];
+            if (pressedSinceLast[static_cast<size_t> (idx (B::BumpBar1) + b)])
+            {
+                level = 1.0f;                                         // instant attack
+                barFlashAmount[static_cast<size_t> (b)] = velFromNorm (prm (P::BumpLevel)) / 127.0f;
+            }
+            else if (level > 0.0f)
+            {
+                level = juce::jmax (0.0f, level - rate);             // zero sustain
+            }
+
+            if (level <= 0.0f || blackout || b >= grid.rig.cols)
+                continue;
+            const float cov = level;
+            const float bri = barFlashAmount[static_cast<size_t> (b)] * (1.0f - kCut);
+            const float mul = ledDim * barDim[b];
+            for (int px = 1; px <= grid.rig.rows; ++px)
+            {
+                const auto ch = grid.rig.channelsFor (b, px);
+                outFrame.set (ch[0], outFrame.get (ch[0]) * (1.0f - cov) + colR * mul * bri * cov);
+                outFrame.set (ch[1], outFrame.get (ch[1]) * (1.0f - cov) + colG * mul * bri * cov);
+                outFrame.set (ch[2], outFrame.get (ch[2]) * (1.0f - cov) + colB * mul * bri * cov);
+            }
+        }
+    }
+
+    // 5. Strobe shutter lives in the driver (as in hitnotedmx).
     float strobeHz = 0.0f;
     if (strobeOn)
         strobeHz = static_cast<float> (hitnotedmx::kStrobeMinHz
@@ -375,13 +429,13 @@ void LiveEngine::tick (double nowSec)
     dmx.setStrobeHz (strobeHz);
     strobeHzOut.store (strobeHz, std::memory_order_relaxed);
 
-    // 5. Push the rig channels.
-    const auto* v = dmxValues.raw();
+    // 6. Push the rig channels.
+    const auto* v = outFrame.raw();
     for (int ch = 1; ch <= grid.rig.rigChannels(); ++ch)
         dmx.setChannel (ch, static_cast<juce::uint8> (juce::jlimit (0, 255, static_cast<int> (v[ch - 1] * 255.0f + 0.5f))));
 
-    // 6. Publish finished frames for the GUI (never the mid-compose buffer).
-    publishedValues    = dmxValues;
+    // 7. Publish finished frames for the GUI (never the mid-compose buffer).
+    publishedValues    = outFrame;
     publishedSelection = selection;
     publishedBeat.store (globalBeats, std::memory_order_relaxed);
     appliedMult.store (curMult, std::memory_order_relaxed);

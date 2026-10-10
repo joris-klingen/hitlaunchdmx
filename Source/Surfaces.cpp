@@ -111,7 +111,12 @@ int xlButtonCode (const LiveEngine& e, int b)
     const bool on = e.isButtonOn (b);
     switch (static_cast<B> (b))
     {
-        case B::Bump:     case B::Blackout:  return on ? xl::kLedRed   : xl::kLedRedLo;
+        case B::BumpBar1: case B::BumpBar2: case B::BumpBar3: case B::BumpBar4:
+        case B::BumpBar5: case B::BumpBar6: case B::BumpBar7:
+            // Dark when the grid has no such bar.
+            if (b - idx (B::BumpBar1) >= e.getRig().cols) return xl::kLedOff;
+            return on ? xl::kLedRed : xl::kLedRedLo;
+        case B::BumpAll:                     return on ? xl::kLedRed   : xl::kLedRedLo;
         case B::Strobe:                      return on || e.getStrobeHz() > 0.0f ? xl::kLedYellow : xl::kLedAmberLo;
         case B::Freeze:   case B::Flip:
         case B::Reverse:                     return on ? xl::kLedGreen : xl::kLedGreenLo;
@@ -168,7 +173,7 @@ PadView describeLaunchpad (const LiveEngine& e, int row, int col)
             case TopButton::Clear:    c = juce::Colours::white;          break;
             case TopButton::Store:    lit = e.isStoreArmed(); c = juce::Colours::red; break;
             case TopButton::Shift:    lit = e.isShiftHeld();  c = juce::Colours::white; break;
-            case TopButton::Blackout: lit = e.isButtonOn (idx (B::Blackout)); c = juce::Colours::red; break;
+            case TopButton::Blackout: lit = e.isBlackout(); c = juce::Colours::red; break;
         }
         return { lit ? c : c.withMultipliedBrightness (kIdle), kTopButtonNames[col - 1], lit };
     }

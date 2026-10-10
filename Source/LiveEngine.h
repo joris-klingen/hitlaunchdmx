@@ -62,6 +62,7 @@ public:
     float getParam (int p) const noexcept { return params[static_cast<size_t> (p)].load (std::memory_order_relaxed); }
     void  buttonEvent (int b, bool down) noexcept;     // hardware or on-screen
     bool  isButtonOn (int b) const noexcept { return buttonOn[static_cast<size_t> (b)].load (std::memory_order_relaxed); }
+    bool  isBlackout() const noexcept { return blackoutOn.load (std::memory_order_relaxed); }
 
     // ── Launchpad ──
     void padPressed (int row, int col) noexcept;        // on the current view page
@@ -130,6 +131,7 @@ private:
     std::atomic<int>  viewPage   { kPageMotion };
     std::atomic<bool> shiftHeld  { false };
     std::atomic<bool> storeArmed { false };
+    std::atomic<bool> blackoutOn { false };   // Launchpad top-row toggle
     std::atomic<int>  activeLook { -1 };
     std::atomic<std::uint32_t> stateSerial { 0 };
     std::atomic<std::uint32_t> padSerial   { 0 };
@@ -166,6 +168,13 @@ private:
     double globalBeats  = 0.0;   // the master beat clock
     double scaledBeats  = 0.0;   // global × relative speed, integrated; fed to computeDmx
     double curMult      = 1.0;
+    double lastFlashT   = -1.0;  // scaled clock at the previous bar-flash step
+
+    // Per-bar bump flashes (bars 1..7): level 1 on the press, decaying over
+    // the Release length; amount = Bump lvl captured on the press.
+    std::array<float, kNumBarBumps> barFlashLevel  {};
+    std::array<float, kNumBarBumps> barFlashAmount {};
+    DmxValues outFrame;           // composed scene + bar flashes (what goes out)
     int    curStep      = 2;     // relative-speed step of curMult (2 = 1×)
 
     // ── published for the GUI ──

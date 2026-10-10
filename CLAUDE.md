@@ -20,6 +20,11 @@ queue: [TODO.md](TODO.md).
 - This app only decides **which hitnotedmx notes are held and at what
   velocity** (`LiveEngine::tick`). hitnotedmx's Speed note (127) is never held;
   the relative-speed knob scales the clock instead.
+- **One deliberate exception:** the XL per-bar bumps (Bump 1–7). hitnotedmx's
+  Bump is whole-rig, so the app overlays hitnotedmx's flash maths on one bar,
+  after `computeDmx`, on a copy of the frame (`outFrame`) so Freeze can't bake
+  it in. Keep it a faithful copy of `advanceBumpFlash`/`applyBumpOverlay`; if
+  hitnotedmx ever gets per-bar bumps, switch to those.
 - `Source/Controls.h` is the single XL mapping table; `Source/PadLayout.h` the
   single Launchpad layout. Hardware LEDs and on-screen mirrors both read
   `describeLaunchpad` / `describeXlButton`, so they can't drift.

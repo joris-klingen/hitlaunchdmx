@@ -19,8 +19,8 @@ namespace hitlaunchdmx
 //   knob row 1 "Send B"  → params  8..15
 //   knob row 2 "Pan"     → params 16..23
 //   faders               → params 24..31  (per-bar dims, bar 1..8)
-//   button row 0 "Track Focus"   → buttons 0..7
-//   button row 1 "Track Control" → buttons 8..15
+//   button row 0 "Track Focus"   → buttons 0..7   (bar bumps 1-7, bump all)
+//   button row 1 "Track Control" → buttons 8..15  (tap, restart, strobe, fades, freeze/flip/reverse)
 //
 // Params are stored normalised (0..1, = CC / 127); the helpers below turn them
 // into engine values. The engine feeds most of them to hitnotedmx's computeDmx
@@ -90,9 +90,15 @@ inline constexpr std::array<ParamDef, kNumParams> kParamDefs {{
 // ── Buttons ──
 enum class B : int
 {
-    Bump = 0, Strobe, Freeze, Flip, Reverse, ToBlack, FromBlack, Blackout,   // Track Focus row
-    Tap = 8, Restart, Spare3, Spare4, Spare5, Spare6, Spare7, Spare8,         // Track Control row
+    BumpBar1 = 0, BumpBar2, BumpBar3, BumpBar4, BumpBar5, BumpBar6, BumpBar7, BumpAll,   // Track Focus row
+    Tap = 8, Restart, Strobe, FromBlack, ToBlack, Freeze, Flip, Reverse,                 // Track Control row
 };
+
+// Per-bar bumps (bars 1..7). Same flash as hitnotedmx's Bump — fires on the
+// press, decays over the Release length, toward white or the held primary,
+// at Bump lvl — but on one bar only. Done in this app (hitnotedmx's Bump is
+// whole-rig); see LiveEngine::tick step 4.
+inline constexpr int kNumBarBumps = 7;
 
 inline constexpr int idx (B b) noexcept { return static_cast<int> (b); }
 
@@ -105,22 +111,22 @@ struct ButtonDef
 };
 
 inline constexpr std::array<ButtonDef, kNumButtons> kButtonDefs {{
-    { "Bump",       ButtonKind::Momentary },
+    { "Bump 1",     ButtonKind::Momentary },
+    { "Bump 2",     ButtonKind::Momentary },
+    { "Bump 3",     ButtonKind::Momentary },
+    { "Bump 4",     ButtonKind::Momentary },
+    { "Bump 5",     ButtonKind::Momentary },
+    { "Bump 6",     ButtonKind::Momentary },
+    { "Bump 7",     ButtonKind::Momentary },
+    { "Bump all",   ButtonKind::Momentary },
+    { "Tap",        ButtonKind::Trigger   },
+    { "Restart",    ButtonKind::Trigger   },
     { "Strobe",     ButtonKind::Momentary },
+    { "From black", ButtonKind::Toggle    },
+    { "To black",   ButtonKind::Toggle    },
     { "Freeze",     ButtonKind::Toggle    },
     { "Flip",       ButtonKind::Toggle    },
     { "Reverse",    ButtonKind::Toggle    },
-    { "To black",   ButtonKind::Toggle    },
-    { "From black", ButtonKind::Toggle    },
-    { "Blackout",   ButtonKind::Toggle    },
-    { "Tap",        ButtonKind::Trigger   },
-    { "Restart",    ButtonKind::Trigger   },
-    { "-",          ButtonKind::Spare     },
-    { "-",          ButtonKind::Spare     },
-    { "-",          ButtonKind::Spare     },
-    { "-",          ButtonKind::Spare     },
-    { "-",          ButtonKind::Spare     },
-    { "-",          ButtonKind::Spare     },
 }};
 
 // ── Value helpers (normalised → engine units) ──
